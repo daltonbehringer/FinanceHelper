@@ -1,0 +1,107 @@
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from backend.auth import get_current_user
+from backend.db import execute, fetchall, fetchone
+
+router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
+
+
+class SnapshotCreate(BaseModel):
+    account_id: int
+    balance: float
+    payment_made: Optional[float] = None
+    note: Optional[str] = None
+
+
+@router.get("/")
+async def list_snapshots(
+    account_id: Optional[int] = Query(None),
+    user_id: int = Depends(get_current_user),
+):
+    if account_id is not None:
+        rows = fetchall(
+            """
+            SELECT s.*, a.name AS account_name
+            FROM account_snapshots s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.user_id = ? AND s.account_id = ?
+            ORDER BY s.recorded_at DESC
+            """,
+            (user_id, account_id),
+        )
+    else:
+        rows = fetchall(
+            """
+            SELECT s.*, a.name AS account_name
+            FROM account_snapshots s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.user_id = ?
+            ORDER BY s.recorded_at DESC
+            """,
+            (user_id,),
+        )
+    return [dict(r) for r in rows]
+
+
+@router.post("/")
+async def create_snapshot(body: SnapshotCreate, user_id: int = Depends(get_current_user)):
+    account = fetchone(
+        "SELECT id FROM accounts WHERE id = ? AND user_id = ?",
+        (body.account_id, user_id),
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    now = datetime.utcnow().isoformat()
+    execute(
+        """
+        INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (body.account_id, user_id, body.balance, body.payment_made, body.note, now),
+    )
+    # Also update accounts.balance for consistency
+    execute(
+        "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
+        (body.balance, body.account_id, user_id),
+    )
+
+    row = fetchone(
+        "SELECT s.*, a.name AS account_name FROM account_snapshots s JOIN accounts a ON s.account_id = a.id WHERE s.user_id = ? ORDER BY s.id DESC LIMIT 1",
+        (user_id,),
+    )
+    return dict(row)
+
+
+@router.post("/{snapshot_id}/restore")
+async def restore_snapshot(snapshot_id: int, user_id: int = Depends(get_current_user)):
+    original = fetchone(
+        "SELECT * FROM account_snapshots WHERE id = ? AND user_id = ?",
+        (snapshot_id, user_id),
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    now = datetime.utcnow().isoformat()
+    note = f"Restored from {original['recorded_at'][:10]}"
+    execute(
+        """
+        INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (original["account_id"], user_id, original["balance"], None, note, now),
+    )
+    execute(
+        "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
+        (original["balance"], original["account_id"], user_id),
+    )
+
+    row = fetchone(
+        "SELECT s.*, a.name AS account_name FROM account_snapshots s JOIN accounts a ON s.account_id = a.id WHERE s.user_id = ? ORDER BY s.id DESC LIMIT 1",
+        (user_id,),
+    )
+    return dict(row)

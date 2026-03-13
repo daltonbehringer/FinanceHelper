@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Tracker</title>
+    <style>
+        :root {
+            --navy: #1a2332;
+            --navy-light: #243447;
+            --white: #ffffff;
+            --gray-50: #f8f9fa;
+            --gray-100: #e9ecef;
+            --gray-200: #dee2e6;
+            --gray-400: #ced4da;
+            --gray-600: #6c757d;
+            --gray-800: #343a40;
+            --green: #28a745;
+            --green-bg: #d4edda;
+            --red: #dc3545;
+            --red-bg: #f8d7da;
+            --blue: #007bff;
+            --blue-bg: #cce5ff;
+            --yellow-bg: #fff3cd;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-800);
+            line-height: 1.5;
+        }
+
+        header {
+            background: var(--navy);
+            color: var(--white);
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+        }
+
+        header h1 { font-size: 1.25rem; font-weight: 600; }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .header-right button {
+            background: transparent;
+            color: var(--gray-200);
+            border: 1px solid var(--gray-600);
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .header-right button:hover { background: var(--navy-light); }
+
+        nav {
+            background: var(--white);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            gap: 0;
+        }
+
+        nav a {
+            padding: 0.75rem 1.5rem;
+            text-decoration: none;
+            color: var(--gray-600);
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+        }
+
+        nav a.active {
+            color: var(--navy);
+            border-bottom-color: var(--blue);
+        }
+
+        nav a:hover { color: var(--navy); }
+
+        main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+        section { display: none; }
+        section.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .card h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+
+        /* Net worth */
+        .net-worth {
+            text-align: center;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .net-worth h2 { font-size: 0.875rem; color: var(--gray-600); text-transform: uppercase; letter-spacing: 0.05em; }
+        .net-worth .amount { font-size: 2.5rem; font-weight: 700; margin-top: 0.25rem; }
+        .net-worth .positive { color: var(--green); }
+        .net-worth .negative { color: var(--red); }
+
+        /* Dashboard stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            text-align: center;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0.25rem;
+            color: var(--red);
+        }
+
+        /* Account cards grid */
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        .account-card { position: relative; }
+        .account-card .type-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            background: var(--blue-bg);
+            color: var(--blue);
+            font-weight: 500;
+            text-transform: capitalize;
+        }
+
+        .account-card .balance {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .account-card .meta {
+            font-size: 0.8rem;
+            color: var(--gray-600);
+        }
+
+        .account-card .meta span { margin-right: 1rem; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        th, td {
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        th {
+            background: var(--gray-50);
+            font-weight: 600;
+            color: var(--gray-600);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 0.75rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--gray-600);
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--gray-400);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--blue);
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-primary { background: var(--blue); color: var(--white); }
+        .btn-primary:hover { background: #0069d9; }
+        .btn-success { background: var(--green); color: var(--white); }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: var(--red); color: var(--white); }
+        .btn-danger:hover { background: #c82333; }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--gray-400);
+            color: var(--gray-800);
+        }
+        .btn-outline:hover { background: var(--gray-100); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+
+        /* Recommendation panel */
+        .recommendation {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-top: 1.5rem;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* Preview card */
+        .preview-card {
+            background: var(--yellow-bg);
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .preview-card .field { margin-bottom: 0.5rem; }
+        .preview-card .field-label { font-weight: 600; display: inline-block; width: 120px; }
+
+        .preview-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+
+        /* Alert */
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .alert-error { background: var(--red-bg); color: var(--red); }
+        .alert-success { background: var(--green-bg); color: var(--green); }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: var(--white);
+            border-radius: 8px;
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 520px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal h3 { margin-bottom: 1rem; }
+        .modal-actions { margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid var(--gray-200);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--gray-600);
+        }
+
+        .promo-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffc107;
+            font-weight: 500;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .accounts-grid { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+            nav { overflow-x: auto; }
+            nav a { white-space: nowrap; padding: 0.75rem 1rem; }
+            .net-worth .amount { font-size: 2rem; }
+            table { font-size: 0.8rem; }
+            th, td { padding: 0.4rem 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Finance Tracker</h1>
+        <div class="header-right">
+            <span id="user-email"></span>
+            <button onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <nav>
+        <a onclick="switchTab('dashboard')" data-tab="dashboard" class="active">Dashboard</a>
+        <a onclick="switchTab('accounts')" data-tab="accounts">Accounts</a>
+        <a onclick="switchTab('expenses')" data-tab="expenses">Expenses</a>
+        <a onclick="switchTab('update')" data-tab="update">Update Balances</a>
+        <a onclick="switchTab('history')" data-tab="history">History</a>
+    </nav>
+
+    <main>
+        <!-- Dashboard -->
+        <section id="dashboard" class="active">
+            <div class="card net-worth">
+                <h2>Net Worth</h2>
+                <div class="amount" id="net-worth-amount">$0.00</div>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Monthly Recurring Expenses</div>
+                    <div class="stat-value" id="monthly-expenses-total">$0.00</div>
+                </div>
+            </div>
+            <div class="accounts-grid" id="dashboard-accounts"></div>
+            <button class="btn btn-primary" id="recommend-btn" onclick="getRecommendation()">
+                Get AI Recommendation
+            </button>
+            <div class="recommendation" id="recommendation-panel" style="display:none;"></div>
+        </section>
+
+        <!-- Accounts -->
+        <section id="accounts">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="font-size:1.25rem;">Accounts</h2>
+                <div style="display:flex; gap:0.75rem; align-items:center;">
+                    <label style="font-size:0.8rem; cursor:pointer;">
+                        <input type="checkbox" id="show-inactive" onchange="loadAccounts()"> Show deactivated
+                    </label>
+                    <button class="btn btn-primary" onclick="showAddForm()">Add Account</button>
+                </div>
+            </div>
+            <div id="add-account-form" class="card" style="display:none;">
+                <h3>Add Account</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="acc-name" placeholder="e.g. Chase Sapphire">
+                    </div>
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select id="acc-type">
+                            <option value="credit_card">Credit Card</option>
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                            <option value="loan">Loan</option>
+                            <option value="mortgage">Mortgage</option>
+                            <option value="line_of_credit">Line of Credit</option>
+                            <option value="401k">401(k)</option>
+                            <option value="ira">IRA</option>
+                            <option value="roth_ira">Roth IRA</option>
+                            <option value="brokerage">Brokerage</option>
+                            <option value="hsa">HSA</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Balance</label>
+                        <input type="number" id="acc-balance" step="0.01" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Interest Rate (%)</label>
+                        <input type="number" id="acc-rate" step="0.01" value="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Minimum Payment</label>
+                        <input type="number" id="acc-min-payment" step="0.01" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label>Credit Limit</label>
+                        <input type="number" id="acc-credit-limit" step="0.01" placeholder="Optional">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Due Date</label>
+                        <input type="date" id="acc-due-date">
+                    </div>
+                    <div class="form-group">
+                        <label>Promo Rate (%) <span style="font-weight:normal; color:var(--gray-600);">Optional — e.g. 0 for 0% APR</span></label>
+                        <input type="number" id="acc-promo-rate" step="0.01" placeholder="e.g. 0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Promo End Date <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                        <input type="date" id="acc-promo-end-date">
+                    </div>
+                    <div></div>
+                </div>
+                <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+                    <button class="btn btn-success" onclick="createAccount()">Save</button>
+                    <button class="btn btn-outline" onclick="hideAddForm()">Cancel</button>
+                </div>
+            </div>
+            <div class="card" style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Balance</th>
+                            <th>Rate</th>
+                            <th>Promo</th>
+                            <th>Min Payment</th>
+                            <th>Credit Limit</th>
+                            <th>Due Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accounts-table-body"></tbody>
+                </table>
+                <div id="accounts-empty" class="empty-state" style="display:none;">
+                    No accounts yet. Add one to get started.
+                </div>
+            </div>
+        </section>
+
+        <!-- Expenses -->
+        <section id="expenses">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="font-size:1.25rem;">Recurring Expenses</h2>
+                <div style="display:flex; gap:0.75rem; align-items:center;">
+                    <label style="font-size:0.8rem; cursor:pointer;">
+                        <input type="checkbox" id="show-inactive-expenses" onchange="loadExpenses()"> Show deactivated
+                    </label>
+                    <button class="btn btn-primary" onclick="showAddExpenseForm()">Add Expense</button>
+                </div>
+            </div>
+            <div id="add-expense-form" class="card" style="display:none;">
+                <h3>Add Recurring Expense</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="exp-name" placeholder="e.g. Rent">
+                    </div>
+                    <div class="form-group">
+                        <label>Amount</label>
+                        <input type="number" id="exp-amount" step="0.01" placeholder="0.00">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                        <input type="text" id="exp-category" placeholder="e.g. Housing, Insurance">
+                    </div>
+                    <div class="form-group">
+                        <label>Due Day of Month <span style="font-weight:normal; color:var(--gray-600);">1–28</span></label>
+                        <input type="number" id="exp-due-day" min="1" max="28" placeholder="e.g. 1">
+                    </div>
+                </div>
+                <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+                    <button class="btn btn-success" onclick="createExpense()">Save</button>
+                    <button class="btn btn-outline" onclick="hideAddExpenseForm()">Cancel</button>
+                </div>
+            </div>
+            <div class="card" style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Amount</th>
+                            <th>Category</th>
+                            <th>Due Day</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expenses-table-body"></tbody>
+                </table>
+                <div id="expenses-empty" class="empty-state" style="display:none;">
+                    No recurring expenses yet. Add one to track fixed monthly costs.
+                </div>
+            </div>
+        </section>
+
+        <!-- Update Balances -->
+        <section id="update">
+            <h2 style="font-size:1.25rem; margin-bottom:1rem;">Update Balances</h2>
+            <div class="card">
+                <div class="form-group">
+                    <label>Describe your update in plain English</label>
+                    <textarea id="update-text" rows="3" placeholder='e.g. "paid $300 on Chase Sapphire, new balance is $4,200"'></textarea>
+                </div>
+                <button class="btn btn-primary" id="parse-btn" onclick="parseUpdate()">Parse Update</button>
+                <div id="parse-error" class="alert alert-error" style="display:none; margin-top:1rem;"></div>
+                <div id="parse-preview" style="display:none;"></div>
+            </div>
+        </section>
+
+        <!-- History -->
+        <section id="history">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="font-size:1.25rem;">History</h2>
+                <div class="form-group" style="margin-bottom:0; width:200px;">
+                    <select id="history-filter" onchange="loadHistory()">
+                        <option value="">All Accounts</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card" style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Account</th>
+                            <th>Balance</th>
+                            <th>Payment</th>
+                            <th>Note</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body"></tbody>
+                </table>
+                <div id="history-empty" class="empty-state" style="display:none;">
+                    No history yet. Update a balance to see entries here.
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Edit Account Modal -->
+    <div class="modal-overlay" id="edit-modal">
+        <div class="modal">
+            <h3>Edit Account</h3>
+            <input type="hidden" id="edit-id">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="edit-name">
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="edit-type">
+                        <option value="credit_card">Credit Card</option>
+                        <option value="checking">Checking</option>
+                        <option value="savings">Savings</option>
+                        <option value="loan">Loan</option>
+                        <option value="mortgage">Mortgage</option>
+                        <option value="line_of_credit">Line of Credit</option>
+                        <option value="401k">401(k)</option>
+                        <option value="ira">IRA</option>
+                        <option value="roth_ira">Roth IRA</option>
+                        <option value="brokerage">Brokerage</option>
+                        <option value="hsa">HSA</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Interest Rate (%)</label>
+                    <input type="number" id="edit-rate" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label>Minimum Payment</label>
+                    <input type="number" id="edit-min-payment" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Credit Limit</label>
+                    <input type="number" id="edit-credit-limit" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" id="edit-due-date">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Promo Rate (%) <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                    <input type="number" id="edit-promo-rate" step="0.01" placeholder="e.g. 0">
+                </div>
+                <div class="form-group">
+                    <label>Promo End Date <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                    <input type="date" id="edit-promo-end-date">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Expense Modal -->
+    <div class="modal-overlay" id="edit-expense-modal">
+        <div class="modal">
+            <h3>Edit Expense</h3>
+            <input type="hidden" id="edit-expense-id">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="edit-exp-name">
+                </div>
+                <div class="form-group">
+                    <label>Amount</label>
+                    <input type="number" id="edit-exp-amount" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Category</label>
+                    <input type="text" id="edit-exp-category">
+                </div>
+                <div class="form-group">
+                    <label>Due Day of Month (1–28)</label>
+                    <input type="number" id="edit-exp-due-day" min="1" max="28">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeEditExpenseModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveExpenseEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- State ----------
+        let accountsCache = [];
+        let expensesCache = [];
+
+        // ---------- Utilities ----------
+        function getToken() {
+            const match = document.cookie.match(/(?:^|; )stytch_session=([^;]*)/);
+            return match ? match[1] : null;
+        }
+
+        async function apiFetch(url, options = {}) {
+            const token = getToken();
+            const headers = { 'Content-Type': 'application/json', ...options.headers };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const resp = await fetch(url, { ...options, headers });
+            if (resp.status === 401) {
+                window.location.href = '/auth/login';
+                return null;
+            }
+            return resp;
+        }
+
+        function formatMoney(amount) {
+            if (amount == null) return '—';
+            const sign = amount < 0 ? '-' : '';
+            return sign + '$' + Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatRate(rate) {
+            if (rate == null) return '—';
+            return rate.toFixed(2) + '%';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '—';
+            const datePart = dateStr.split('T')[0]; // handles both date-only and ISO timestamps
+            const [year, month, day] = datePart.split('-').map(Number);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[month - 1]} ${String(day).padStart(2, '0')}, ${year}`;
+        }
+
+        function formatType(type) {
+            if (type === '401k') return '401(k)';
+            if (type === 'ira') return 'IRA';
+            if (type === 'roth_ira') return 'Roth IRA';
+            if (type === 'hsa') return 'HSA';
+            return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function isDebt(type) {
+            return ['credit_card', 'loan', 'mortgage', 'line_of_credit'].includes(type);
+        }
+
+        function formatPromo(account) {
+            if (account.promo_rate == null) return '—';
+            const rate = `${account.promo_rate.toFixed(2)}%`;
+            if (account.promo_end_date) {
+                return `<span class="promo-badge">${rate} until ${formatDate(account.promo_end_date)}</span>`;
+            }
+            return `<span class="promo-badge">${rate}</span>`;
+        }
+
+        // ---------- Tab Navigation ----------
+        function switchTab(tabId) {
+            document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`nav a[data-tab="${tabId}"]`).classList.add('active');
+
+            if (tabId === 'dashboard') loadDashboard();
+            else if (tabId === 'accounts') loadAccounts();
+            else if (tabId === 'expenses') loadExpenses();
+            else if (tabId === 'history') loadHistory();
+            else if (tabId === 'update') loadAccountsCacheOnly();
+        }
+
+        // ---------- Auth ----------
+        async function checkAuth() {
+            const resp = await apiFetch('/auth/me');
+            if (!resp) return;
+            if (!resp.ok) {
+                window.location.href = '/auth/login';
+                return;
+            }
+            const data = await resp.json();
+            document.getElementById('user-email').textContent = data.email;
+            loadDashboard();
+        }
+
+        async function logout() {
+            await apiFetch('/auth/logout', { method: 'POST' });
+            document.cookie = 'stytch_session=; Max-Age=0; path=/';
+            window.location.href = '/auth/login';
+        }
+
+        // ---------- Dashboard ----------
+        async function loadDashboard() {
+            const [accountsResp, expensesResp] = await Promise.all([
+                apiFetch('/api/accounts'),
+                apiFetch('/api/expenses'),
+            ]);
+
+            if (!accountsResp || !accountsResp.ok) return;
+            const accounts = await accountsResp.json();
+            accountsCache = accounts;
+
+            // Net worth
+            let assets = 0, debts = 0;
+            accounts.forEach(a => {
+                const bal = a.current_balance || 0;
+                if (isDebt(a.type)) debts += bal;
+                else assets += bal;
+            });
+            const netWorth = assets - debts;
+            const el = document.getElementById('net-worth-amount');
+            el.textContent = formatMoney(netWorth);
+            el.className = 'amount ' + (netWorth >= 0 ? 'positive' : 'negative');
+
+            // Monthly expenses total
+            if (expensesResp && expensesResp.ok) {
+                const expenses = await expensesResp.json();
+                expensesCache = expenses;
+                const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                document.getElementById('monthly-expenses-total').textContent = formatMoney(total);
+            }
+
+            // Account cards
+            const grid = document.getElementById('dashboard-accounts');
+            if (accounts.length === 0) {
+                grid.innerHTML = '<div class="empty-state">No accounts yet. Go to Accounts tab to add one.</div>';
+                return;
+            }
+            grid.innerHTML = accounts.map(a => `
+                <div class="card account-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>${esc(a.name)}</h3>
+                        <span class="type-badge">${formatType(a.type)}</span>
+                    </div>
+                    <div class="balance" style="color:${isDebt(a.type) ? 'var(--red)' : 'var(--green)'}">
+                        ${formatMoney(a.current_balance)}
+                    </div>
+                    <div class="meta">
+                        ${a.interest_rate ? `<span>Rate: ${formatRate(a.interest_rate)}</span>` : ''}
+                        ${a.promo_rate != null ? `<span>Promo: ${a.promo_rate.toFixed(2)}%${a.promo_end_date ? ' until ' + formatDate(a.promo_end_date) : ''}</span>` : ''}
+                        ${a.minimum_payment ? `<span>Min: ${formatMoney(a.minimum_payment)}</span>` : ''}
+                        ${a.due_date ? `<span>Due: ${formatDate(a.due_date)}</span>` : ''}
+                        ${a.last_updated ? `<span>Updated: ${formatDate(a.last_updated)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function getRecommendation() {
+            const btn = document.getElementById('recommend-btn');
+            const panel = document.getElementById('recommendation-panel');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Getting recommendation...';
+            panel.style.display = 'none';
+
+            const resp = await apiFetch('/api/ai/recommend', { method: 'POST' });
+            btn.disabled = false;
+            btn.textContent = 'Get AI Recommendation';
+
+            if (!resp || !resp.ok) {
+                panel.style.display = 'block';
+                panel.textContent = 'Failed to get recommendation. Please try again.';
+                return;
+            }
+            const data = await resp.json();
+            panel.style.display = 'block';
+            panel.textContent = data.recommendation;
+        }
+
+        // ---------- Accounts ----------
+        async function loadAccounts() {
+            const includeInactive = document.getElementById('show-inactive').checked ? 1 : 0;
+            const resp = await apiFetch(`/api/accounts?include_inactive=${includeInactive}`);
+            if (!resp || !resp.ok) return;
+            const accounts = await resp.json();
+            accountsCache = accounts;
+
+            const tbody = document.getElementById('accounts-table-body');
+            const emptyEl = document.getElementById('accounts-empty');
+
+            if (accounts.length === 0) {
+                tbody.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+            tbody.innerHTML = accounts.map(a => `
+                <tr style="${a.is_active ? '' : 'opacity:0.5;'}">
+                    <td>${esc(a.name)}</td>
+                    <td>${formatType(a.type)}</td>
+                    <td style="color:${isDebt(a.type) ? 'var(--red)' : 'var(--green)'}">${formatMoney(a.current_balance)}</td>
+                    <td>${formatRate(a.interest_rate)}</td>
+                    <td>${formatPromo(a)}</td>
+                    <td>${a.minimum_payment ? formatMoney(a.minimum_payment) : '—'}</td>
+                    <td>${a.credit_limit ? formatMoney(a.credit_limit) : '—'}</td>
+                    <td>${a.due_date ? formatDate(a.due_date) : '—'}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="openEditModal(${a.id})">Edit</button>
+                        ${a.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateAccount(${a.id})">Deactivate</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+
+            updateHistoryFilter(accounts);
+        }
+
+        function showAddForm() { document.getElementById('add-account-form').style.display = 'block'; }
+        function hideAddForm() {
+            document.getElementById('add-account-form').style.display = 'none';
+            document.getElementById('acc-name').value = '';
+            document.getElementById('acc-balance').value = '0';
+            document.getElementById('acc-rate').value = '0';
+            document.getElementById('acc-min-payment').value = '';
+            document.getElementById('acc-credit-limit').value = '';
+            document.getElementById('acc-due-date').value = '';
+            document.getElementById('acc-promo-rate').value = '';
+            document.getElementById('acc-promo-end-date').value = '';
+        }
+
+        async function createAccount() {
+            const body = {
+                name: document.getElementById('acc-name').value,
+                type: document.getElementById('acc-type').value,
+                balance: parseFloat(document.getElementById('acc-balance').value) || 0,
+                interest_rate: parseFloat(document.getElementById('acc-rate').value) || 0,
+            };
+            const minPay = document.getElementById('acc-min-payment').value;
+            const creditLimit = document.getElementById('acc-credit-limit').value;
+            const dueDate = document.getElementById('acc-due-date').value;
+            const promoRate = document.getElementById('acc-promo-rate').value;
+            const promoEndDate = document.getElementById('acc-promo-end-date').value;
+            if (minPay) body.minimum_payment = parseFloat(minPay);
+            if (creditLimit) body.credit_limit = parseFloat(creditLimit);
+            if (dueDate) body.due_date = dueDate;
+            if (promoRate !== '') body.promo_rate = parseFloat(promoRate);
+            if (promoEndDate) body.promo_end_date = promoEndDate;
+
+            const resp = await apiFetch('/api/accounts', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                hideAddForm();
+                loadAccounts();
+            }
+        }
+
+        function openEditModal(id) {
+            const a = accountsCache.find(acc => acc.id === id);
+            if (!a) return;
+            document.getElementById('edit-id').value = a.id;
+            document.getElementById('edit-name').value = a.name;
+            document.getElementById('edit-type').value = a.type;
+            document.getElementById('edit-rate').value = a.interest_rate || '';
+            document.getElementById('edit-min-payment').value = a.minimum_payment || '';
+            document.getElementById('edit-credit-limit').value = a.credit_limit || '';
+            document.getElementById('edit-due-date').value = a.due_date || '';
+            document.getElementById('edit-promo-rate').value = a.promo_rate != null ? a.promo_rate : '';
+            document.getElementById('edit-promo-end-date').value = a.promo_end_date || '';
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function saveEdit() {
+            const id = document.getElementById('edit-id').value;
+            const body = {
+                name: document.getElementById('edit-name').value,
+                type: document.getElementById('edit-type').value,
+                interest_rate: parseFloat(document.getElementById('edit-rate').value) || 0,
+            };
+            const minPay = document.getElementById('edit-min-payment').value;
+            const creditLimit = document.getElementById('edit-credit-limit').value;
+            const dueDate = document.getElementById('edit-due-date').value;
+            const promoRate = document.getElementById('edit-promo-rate').value;
+            const promoEndDate = document.getElementById('edit-promo-end-date').value;
+            if (minPay) body.minimum_payment = parseFloat(minPay);
+            if (creditLimit) body.credit_limit = parseFloat(creditLimit);
+            if (dueDate) body.due_date = dueDate;
+            if (promoRate !== '') body.promo_rate = parseFloat(promoRate);
+            if (promoEndDate) body.promo_end_date = promoEndDate;
+
+            const resp = await apiFetch(`/api/accounts/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                closeEditModal();
+                loadAccounts();
+            }
+        }
+
+        async function deactivateAccount(id) {
+            if (!confirm('Deactivate this account?')) return;
+            const resp = await apiFetch(`/api/accounts/${id}/deactivate`, { method: 'POST' });
+            if (resp && resp.ok) loadAccounts();
+        }
+
+        // ---------- Expenses ----------
+        async function loadExpenses() {
+            const includeInactive = document.getElementById('show-inactive-expenses').checked ? 1 : 0;
+            const resp = await apiFetch(`/api/expenses?include_inactive=${includeInactive}`);
+            if (!resp || !resp.ok) return;
+            const expenses = await resp.json();
+            expensesCache = expenses;
+
+            const tbody = document.getElementById('expenses-table-body');
+            const emptyEl = document.getElementById('expenses-empty');
+
+            if (expenses.length === 0) {
+                tbody.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+            tbody.innerHTML = expenses.map(e => `
+                <tr style="${e.is_active ? '' : 'opacity:0.5;'}">
+                    <td>${esc(e.name)}</td>
+                    <td>${formatMoney(e.amount)}</td>
+                    <td>${esc(e.category || '—')}</td>
+                    <td>Day ${e.due_day}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="openEditExpenseModal(${e.id})">Edit</button>
+                        ${e.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateExpense(${e.id})">Deactivate</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showAddExpenseForm() { document.getElementById('add-expense-form').style.display = 'block'; }
+        function hideAddExpenseForm() {
+            document.getElementById('add-expense-form').style.display = 'none';
+            document.getElementById('exp-name').value = '';
+            document.getElementById('exp-amount').value = '';
+            document.getElementById('exp-category').value = '';
+            document.getElementById('exp-due-day').value = '';
+        }
+
+        async function createExpense() {
+            const name = document.getElementById('exp-name').value.trim();
+            const amount = parseFloat(document.getElementById('exp-amount').value);
+            const dueDay = parseInt(document.getElementById('exp-due-day').value);
+            if (!name || isNaN(amount) || isNaN(dueDay)) {
+                alert('Name, amount, and due day are required.');
+                return;
+            }
+            const body = { name, amount, due_day: dueDay };
+            const category = document.getElementById('exp-category').value.trim();
+            if (category) body.category = category;
+
+            const resp = await apiFetch('/api/expenses', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                hideAddExpenseForm();
+                loadExpenses();
+            } else if (resp) {
+                const err = await resp.json();
+                alert(err.detail || 'Failed to save expense.');
+            }
+        }
+
+        function openEditExpenseModal(id) {
+            const e = expensesCache.find(ex => ex.id === id);
+            if (!e) return;
+            document.getElementById('edit-expense-id').value = e.id;
+            document.getElementById('edit-exp-name').value = e.name;
+            document.getElementById('edit-exp-amount').value = e.amount;
+            document.getElementById('edit-exp-category').value = e.category || '';
+            document.getElementById('edit-exp-due-day').value = e.due_day;
+            document.getElementById('edit-expense-modal').classList.add('active');
+        }
+
+        function closeEditExpenseModal() {
+            document.getElementById('edit-expense-modal').classList.remove('active');
+        }
+
+        async function saveExpenseEdit() {
+            const id = document.getElementById('edit-expense-id').value;
+            const body = {
+                name: document.getElementById('edit-exp-name').value,
+                amount: parseFloat(document.getElementById('edit-exp-amount').value),
+                due_day: parseInt(document.getElementById('edit-exp-due-day').value),
+            };
+            const category = document.getElementById('edit-exp-category').value.trim();
+            if (category) body.category = category;
+
+            const resp = await apiFetch(`/api/expenses/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                closeEditExpenseModal();
+                loadExpenses();
+            }
+        }
+
+        async function deactivateExpense(id) {
+            if (!confirm('Deactivate this expense?')) return;
+            const resp = await apiFetch(`/api/expenses/${id}/deactivate`, { method: 'POST' });
+            if (resp && resp.ok) loadExpenses();
+        }
+
+        // ---------- Update Balances ----------
+        async function loadAccountsCacheOnly() {
+            if (accountsCache.length === 0) {
+                const resp = await apiFetch('/api/accounts');
+                if (resp && resp.ok) accountsCache = await resp.json();
+            }
+        }
+
+        async function parseUpdate() {
+            const text = document.getElementById('update-text').value.trim();
+            if (!text) return;
+
+            const btn = document.getElementById('parse-btn');
+            const errorEl = document.getElementById('parse-error');
+            const previewEl = document.getElementById('parse-preview');
+            errorEl.style.display = 'none';
+            previewEl.style.display = 'none';
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Parsing...';
+
+            const resp = await apiFetch('/api/ai/parse-update', {
+                method: 'POST',
+                body: JSON.stringify({ text }),
+            });
+            btn.disabled = false;
+            btn.textContent = 'Parse Update';
+
+            if (!resp || !resp.ok) {
+                errorEl.textContent = 'Failed to parse update. Please try again.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const parsed = await resp.json();
+
+            if (parsed.account_id == null) {
+                errorEl.innerHTML = 'Could not identify the account. Please select manually:';
+                const selectHtml = `
+                    <select id="manual-account-select" style="margin-top:0.5rem;">
+                        <option value="">Select an account</option>
+                        ${accountsCache.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}
+                    </select>
+                `;
+                errorEl.innerHTML += selectHtml;
+                errorEl.style.display = 'block';
+
+                previewEl.style.display = 'block';
+                previewEl.innerHTML = renderPreview({ ...parsed, _manualSelect: true });
+                return;
+            }
+
+            previewEl.style.display = 'block';
+            previewEl.innerHTML = renderPreview(parsed);
+        }
+
+        function renderPreview(parsed) {
+            const account = accountsCache.find(a => a.id === parsed.account_id);
+            const accountName = account ? account.name : (parsed._manualSelect ? '(Select above)' : 'Unknown');
+            return `
+                <div class="preview-card">
+                    <div class="field"><span class="field-label">Account:</span> ${esc(accountName)}</div>
+                    <div class="field"><span class="field-label">New Balance:</span> ${parsed.new_balance != null ? formatMoney(parsed.new_balance) : '—'}</div>
+                    <div class="field"><span class="field-label">Payment Made:</span> ${parsed.payment_made != null ? formatMoney(parsed.payment_made) : '—'}</div>
+                    <div class="field"><span class="field-label">Note:</span> ${esc(parsed.note || '')}</div>
+                    <div class="preview-actions">
+                        <button class="btn btn-success" onclick="confirmUpdate(${JSON.stringify(parsed).replace(/"/g, '&quot;')})">Confirm</button>
+                        <button class="btn btn-outline" onclick="cancelUpdate()">Cancel</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function confirmUpdate(parsed) {
+            let accountId = parsed.account_id;
+            if (!accountId) {
+                const sel = document.getElementById('manual-account-select');
+                if (sel) accountId = parseInt(sel.value);
+                if (!accountId) {
+                    alert('Please select an account.');
+                    return;
+                }
+            }
+
+            const body = { account_id: accountId, balance: parsed.new_balance || 0 };
+            if (parsed.payment_made != null) body.payment_made = parsed.payment_made;
+            if (parsed.note) body.note = parsed.note;
+
+            const resp = await apiFetch('/api/snapshots', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+
+            const previewEl = document.getElementById('parse-preview');
+            const errorEl = document.getElementById('parse-error');
+
+            if (resp && resp.ok) {
+                previewEl.innerHTML = '<div class="alert alert-success">Balance updated successfully!</div>';
+                errorEl.style.display = 'none';
+                document.getElementById('update-text').value = '';
+                setTimeout(() => { previewEl.style.display = 'none'; }, 3000);
+            } else {
+                previewEl.innerHTML = '<div class="alert alert-error">Failed to save update.</div>';
+            }
+        }
+
+        function cancelUpdate() {
+            document.getElementById('parse-preview').style.display = 'none';
+            document.getElementById('parse-error').style.display = 'none';
+        }
+
+        // ---------- History ----------
+        function updateHistoryFilter(accounts) {
+            const sel = document.getElementById('history-filter');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All Accounts</option>' +
+                accounts.filter(a => a.is_active).map(a =>
+                    `<option value="${a.id}">${esc(a.name)}</option>`
+                ).join('');
+            sel.value = current;
+        }
+
+        async function loadHistory() {
+            const accountId = document.getElementById('history-filter').value;
+            const url = accountId ? `/api/snapshots?account_id=${accountId}` : '/api/snapshots';
+            const resp = await apiFetch(url);
+            if (!resp || !resp.ok) return;
+            const snapshots = await resp.json();
+
+            const tbody = document.getElementById('history-table-body');
+            const emptyEl = document.getElementById('history-empty');
+
+            if (snapshots.length === 0) {
+                tbody.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+            tbody.innerHTML = snapshots.map(s => `
+                <tr>
+                    <td>${formatDate(s.recorded_at)}</td>
+                    <td>${esc(s.account_name)}</td>
+                    <td>${formatMoney(s.balance)}</td>
+                    <td>${s.payment_made != null ? formatMoney(s.payment_made) : '—'}</td>
+                    <td>${esc(s.note || '')}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="restoreSnapshot(${s.id})">Restore</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function restoreSnapshot(id) {
+            if (!confirm('Restore this balance? A new snapshot will be created with this balance.')) return;
+            const resp = await apiFetch(`/api/snapshots/${id}/restore`, { method: 'POST' });
+            if (resp && resp.ok) {
+                loadHistory();
+                // Refresh accounts cache so dashboard reflects the restored balance
+                const accountsResp = await apiFetch('/api/accounts');
+                if (accountsResp && accountsResp.ok) accountsCache = await accountsResp.json();
+            } else {
+                alert('Failed to restore snapshot.');
+            }
+        }
+
+        // ---------- Helpers ----------
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+
+        // ---------- Init ----------
+        document.addEventListener('DOMContentLoaded', checkAuth);
+    </script>
+</body>
+</html>

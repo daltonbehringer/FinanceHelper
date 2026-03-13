@@ -1,0 +1,125 @@
+import sqlite3
+from pathlib import Path
+
+DB_PATH = Path(__file__).resolve().parent.parent / "finance.db"
+
+
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def _migrate_accounts_table(conn: sqlite3.Connection):
+    """Remove CHECK constraint on type and add promo columns."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'"
+    ).fetchone()
+    if not row or "CHECK(type IN" not in (row[0] or ""):
+        return  # Already migrated or table doesn't exist yet
+
+    conn.execute("ALTER TABLE accounts RENAME TO accounts_backup")
+    conn.execute("""
+        CREATE TABLE accounts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL REFERENCES users(id),
+            name            TEXT NOT NULL,
+            type            TEXT NOT NULL,
+            balance         REAL NOT NULL DEFAULT 0,
+            interest_rate   REAL NOT NULL DEFAULT 0,
+            minimum_payment REAL,
+            credit_limit    REAL,
+            due_date        TEXT,
+            is_active       INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL,
+            promo_rate      REAL,
+            promo_end_date  TEXT
+        )
+    """)
+    conn.execute("""
+        INSERT INTO accounts
+        SELECT id, user_id, name, type, balance, interest_rate,
+               minimum_payment, credit_limit, due_date, is_active, created_at,
+               NULL, NULL
+        FROM accounts_backup
+    """)
+    conn.execute("DROP TABLE accounts_backup")
+
+
+def init_db():
+    conn = get_db()
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    with conn:
+        _migrate_accounts_table(conn)
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            stytch_user_id TEXT UNIQUE NOT NULL,
+            email         TEXT NOT NULL,
+            created_at    TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS accounts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL REFERENCES users(id),
+            name            TEXT NOT NULL,
+            type            TEXT NOT NULL,
+            balance         REAL NOT NULL DEFAULT 0,
+            interest_rate   REAL NOT NULL DEFAULT 0,
+            minimum_payment REAL,
+            credit_limit    REAL,
+            due_date        TEXT,
+            is_active       INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL,
+            promo_rate      REAL,
+            promo_end_date  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS account_snapshots (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id    INTEGER NOT NULL REFERENCES accounts(id),
+            user_id       INTEGER NOT NULL REFERENCES users(id),
+            balance       REAL NOT NULL,
+            payment_made  REAL,
+            note          TEXT,
+            recorded_at   TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS recurring_expenses (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            name        TEXT NOT NULL,
+            amount      REAL NOT NULL,
+            category    TEXT,
+            due_day     INTEGER NOT NULL CHECK(due_day BETWEEN 1 AND 28),
+            is_active   INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+def execute(sql: str, params: tuple = ()) -> sqlite3.Cursor:
+    conn = get_db()
+    cursor = conn.execute(sql, params)
+    conn.commit()
+    conn.close()
+    return cursor
+
+
+def fetchone(sql: str, params: tuple = ()) -> sqlite3.Row | None:
+    conn = get_db()
+    row = conn.execute(sql, params).fetchone()
+    conn.close()
+    return row
+
+
+def fetchall(sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+    conn = get_db()
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return rows

@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+finance.db
+.venv/
+.claude/settings.local.json
+CLAUDE.md
