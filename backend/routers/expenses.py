@@ -14,7 +14,7 @@ class ExpenseCreate(BaseModel):
     name: str
     amount: float
     category: Optional[str] = None
-    due_day: int  # 1-28
+    due_day: Optional[int] = None  # 1-28, optional for subscriptions
 
 
 class ExpenseUpdate(BaseModel):
@@ -39,7 +39,7 @@ async def list_expenses(
 
 @router.post("/")
 async def create_expense(body: ExpenseCreate, user_id: int = Depends(get_current_user)):
-    if not (1 <= body.due_day <= 28):
+    if body.due_day is not None and not (1 <= body.due_day <= 28):
         raise HTTPException(status_code=422, detail="due_day must be between 1 and 28")
 
     now = datetime.utcnow().isoformat()
@@ -72,7 +72,7 @@ async def update_expense(
     if not updates:
         raise HTTPException(status_code=422, detail="No fields to update")
 
-    if "due_day" in updates and not (1 <= updates["due_day"] <= 28):
+    if "due_day" in updates and updates["due_day"] is not None and not (1 <= updates["due_day"] <= 28):
         raise HTTPException(status_code=422, detail="due_day must be between 1 and 28")
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)

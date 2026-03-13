@@ -107,12 +107,12 @@
         /* Net worth */
         .net-worth {
             text-align: center;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
         }
 
         .net-worth h2 { font-size: 0.875rem; color: var(--gray-600); text-transform: uppercase; letter-spacing: 0.05em; }
-        .net-worth .amount { font-size: 2.5rem; font-weight: 700; margin-top: 0.25rem; }
+        .net-worth .amount { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
         .net-worth .positive { color: var(--green); }
         .net-worth .negative { color: var(--red); }
 
@@ -120,15 +120,15 @@
         .stats-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.5rem;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
         }
 
         .stat-card {
             background: var(--white);
             border: 1px solid var(--gray-200);
             border-radius: 8px;
-            padding: 1rem 1.25rem;
+            padding: 0.75rem 1rem;
             text-align: center;
         }
 
@@ -140,17 +140,17 @@
         }
 
         .stat-card .stat-value {
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             font-weight: 700;
-            margin-top: 0.25rem;
+            margin-top: 0.2rem;
             color: var(--red);
         }
 
         /* Account cards grid */
         .accounts-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 0.75rem;
         }
 
         .account-card { position: relative; }
@@ -166,9 +166,9 @@
         }
 
         .account-card .balance {
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             font-weight: 700;
-            margin: 0.5rem 0;
+            margin: 0.35rem 0;
         }
 
         .account-card .meta {
@@ -355,10 +355,20 @@
             font-weight: 500;
         }
 
+        /* Dashboard two-column top */
+        .dashboard-top {
+            display: grid;
+            grid-template-columns: 1fr 260px;
+            gap: 1rem;
+            align-items: start;
+            margin-bottom: 0;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .accounts-grid { grid-template-columns: 1fr; }
             .form-row { grid-template-columns: 1fr; }
+            .dashboard-top { grid-template-columns: 1fr; }
             nav { overflow-x: auto; }
             nav a { white-space: nowrap; padding: 0.75rem 1rem; }
             .net-worth .amount { font-size: 2rem; }
@@ -387,21 +397,42 @@
     <main>
         <!-- Dashboard -->
         <section id="dashboard" class="active">
-            <div class="card net-worth">
-                <h2>Net Worth</h2>
-                <div class="amount" id="net-worth-amount">$0.00</div>
-            </div>
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-label">Monthly Recurring Expenses</div>
-                    <div class="stat-value" id="monthly-expenses-total">$0.00</div>
+            <div class="dashboard-top">
+                <!-- Left: Quick Balance Update -->
+                <div class="card" style="margin-bottom:0;">
+                    <div class="form-group" style="margin-bottom:0.5rem;">
+                        <label>Quick Balance Update</label>
+                        <textarea id="dash-update-text" rows="3" placeholder='e.g. "paid $300 on Chase Sapphire, new balance is $4,200"'></textarea>
+                    </div>
+                    <button class="btn btn-primary" id="dash-parse-btn" onclick="parseUpdate('dash-')">Update</button>
+                    <div id="dash-parse-error" class="alert alert-error" style="display:none; margin-top:0.75rem;"></div>
+                    <div id="dash-parse-preview" style="display:none;"></div>
+                </div>
+                <!-- Right: Net Worth + Monthly Expenses -->
+                <div>
+                    <div class="card net-worth" style="margin-bottom:0.75rem;">
+                        <h2>Net Worth</h2>
+                        <div class="amount" id="net-worth-amount">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Monthly Recurring</div>
+                        <div class="stat-value" id="monthly-expenses-total">$0.00</div>
+                    </div>
                 </div>
             </div>
-            <div class="accounts-grid" id="dashboard-accounts"></div>
-            <button class="btn btn-primary" id="recommend-btn" onclick="getRecommendation()">
-                Get AI Recommendation
-            </button>
-            <div class="recommendation" id="recommendation-panel" style="display:none;"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.75rem;">
+                <span style="font-size:0.8rem; font-weight:600; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.05em;">Accounts</span>
+                <button class="btn btn-primary" id="recommend-btn" onclick="getRecommendation()">Get Recommendation</button>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <div style="font-size:0.75rem; font-weight:600; color:var(--red); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Debts</div>
+                <div class="accounts-grid" id="dashboard-debts"></div>
+            </div>
+            <div>
+                <div style="font-size:0.75rem; font-weight:600; color:var(--green); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Assets</div>
+                <div class="accounts-grid" id="dashboard-assets"></div>
+            </div>
+            <div class="recommendation" id="recommendation-panel" style="display:none; margin-top:1rem;"></div>
         </section>
 
         <!-- Accounts -->
@@ -534,8 +565,8 @@
                         <input type="text" id="exp-category" placeholder="e.g. Housing, Insurance">
                     </div>
                     <div class="form-group">
-                        <label>Due Day of Month <span style="font-weight:normal; color:var(--gray-600);">1–28</span></label>
-                        <input type="number" id="exp-due-day" min="1" max="28" placeholder="e.g. 1">
+                        <label>Due Day of Month <span style="font-weight:normal; color:var(--gray-600);">Optional, 1–28</span></label>
+                        <input type="number" id="exp-due-day" min="1" max="28" placeholder="Optional">
                     </div>
                 </div>
                 <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
@@ -693,8 +724,8 @@
                     <input type="text" id="edit-exp-category">
                 </div>
                 <div class="form-group">
-                    <label>Due Day of Month (1–28)</label>
-                    <input type="number" id="edit-exp-due-day" min="1" max="28">
+                    <label>Due Day of Month <span style="font-weight:normal; color:var(--gray-600);">Optional, 1–28</span></label>
+                    <input type="number" id="edit-exp-due-day" min="1" max="28" placeholder="Optional">
                 </div>
             </div>
             <div class="modal-actions">
@@ -812,13 +843,13 @@
             accountsCache = accounts;
 
             // Net worth
-            let assets = 0, debts = 0;
+            let totalAssets = 0, totalDebts = 0;
             accounts.forEach(a => {
                 const bal = a.current_balance || 0;
-                if (isDebt(a.type)) debts += bal;
-                else assets += bal;
+                if (isDebt(a.type)) totalDebts += bal;
+                else totalAssets += bal;
             });
-            const netWorth = assets - debts;
+            const netWorth = totalAssets - totalDebts;
             const el = document.getElementById('net-worth-amount');
             el.textContent = formatMoney(netWorth);
             el.className = 'amount ' + (netWorth >= 0 ? 'positive' : 'negative');
@@ -831,13 +862,8 @@
                 document.getElementById('monthly-expenses-total').textContent = formatMoney(total);
             }
 
-            // Account cards
-            const grid = document.getElementById('dashboard-accounts');
-            if (accounts.length === 0) {
-                grid.innerHTML = '<div class="empty-state">No accounts yet. Go to Accounts tab to add one.</div>';
-                return;
-            }
-            grid.innerHTML = accounts.map(a => `
+            // Account cards — split into Debts and Assets
+            const cardHtml = a => `
                 <div class="card account-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>${esc(a.name)}</h3>
@@ -847,14 +873,24 @@
                         ${formatMoney(a.current_balance)}
                     </div>
                     <div class="meta">
-                        ${a.interest_rate ? `<span>Rate: ${formatRate(a.interest_rate)}</span>` : ''}
-                        ${a.promo_rate != null ? `<span>Promo: ${a.promo_rate.toFixed(2)}%${a.promo_end_date ? ' until ' + formatDate(a.promo_end_date) : ''}</span>` : ''}
-                        ${a.minimum_payment ? `<span>Min: ${formatMoney(a.minimum_payment)}</span>` : ''}
                         ${a.due_date ? `<span>Due: ${formatDate(a.due_date)}</span>` : ''}
                         ${a.last_updated ? `<span>Updated: ${formatDate(a.last_updated)}</span>` : ''}
                     </div>
                 </div>
-            `).join('');
+            `;
+
+            const debts = accounts.filter(a => isDebt(a.type));
+            const assets = accounts.filter(a => !isDebt(a.type));
+
+            const debtsGrid = document.getElementById('dashboard-debts');
+            const assetsGrid = document.getElementById('dashboard-assets');
+
+            debtsGrid.innerHTML = debts.length
+                ? debts.map(cardHtml).join('')
+                : '<p style="color:var(--gray-600); font-size:0.875rem; padding:0.25rem 0;">No debts.</p>';
+            assetsGrid.innerHTML = assets.length
+                ? assets.map(cardHtml).join('')
+                : '<p style="color:var(--gray-600); font-size:0.875rem; padding:0.25rem 0;">No assets.</p>';
         }
 
         async function getRecommendation() {
@@ -866,7 +902,7 @@
 
             const resp = await apiFetch('/api/ai/recommend', { method: 'POST' });
             btn.disabled = false;
-            btn.textContent = 'Get AI Recommendation';
+            btn.textContent = 'Get Recommendation';
 
             if (!resp || !resp.ok) {
                 panel.style.display = 'block';
@@ -1031,7 +1067,7 @@
                     <td>${esc(e.name)}</td>
                     <td>${formatMoney(e.amount)}</td>
                     <td>${esc(e.category || '—')}</td>
-                    <td>Day ${e.due_day}</td>
+                    <td>${e.due_day != null ? 'Day ' + e.due_day : '—'}</td>
                     <td>
                         <button class="btn btn-outline btn-sm" onclick="openEditExpenseModal(${e.id})">Edit</button>
                         ${e.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateExpense(${e.id})">Deactivate</button>` : ''}
@@ -1052,12 +1088,13 @@
         async function createExpense() {
             const name = document.getElementById('exp-name').value.trim();
             const amount = parseFloat(document.getElementById('exp-amount').value);
-            const dueDay = parseInt(document.getElementById('exp-due-day').value);
-            if (!name || isNaN(amount) || isNaN(dueDay)) {
-                alert('Name, amount, and due day are required.');
+            if (!name || isNaN(amount)) {
+                alert('Name and amount are required.');
                 return;
             }
-            const body = { name, amount, due_day: dueDay };
+            const body = { name, amount };
+            const dueDayVal = document.getElementById('exp-due-day').value;
+            if (dueDayVal) body.due_day = parseInt(dueDayVal);
             const category = document.getElementById('exp-category').value.trim();
             if (category) body.category = category;
 
@@ -1081,7 +1118,7 @@
             document.getElementById('edit-exp-name').value = e.name;
             document.getElementById('edit-exp-amount').value = e.amount;
             document.getElementById('edit-exp-category').value = e.category || '';
-            document.getElementById('edit-exp-due-day').value = e.due_day;
+            document.getElementById('edit-exp-due-day').value = e.due_day != null ? e.due_day : '';
             document.getElementById('edit-expense-modal').classList.add('active');
         }
 
@@ -1094,8 +1131,9 @@
             const body = {
                 name: document.getElementById('edit-exp-name').value,
                 amount: parseFloat(document.getElementById('edit-exp-amount').value),
-                due_day: parseInt(document.getElementById('edit-exp-due-day').value),
             };
+            const dueDayVal = document.getElementById('edit-exp-due-day').value;
+            if (dueDayVal) body.due_day = parseInt(dueDayVal);
             const category = document.getElementById('edit-exp-category').value.trim();
             if (category) body.category = category;
 
@@ -1123,13 +1161,13 @@
             }
         }
 
-        async function parseUpdate() {
-            const text = document.getElementById('update-text').value.trim();
+        async function parseUpdate(prefix = '') {
+            const text = document.getElementById(prefix + 'update-text').value.trim();
             if (!text) return;
 
-            const btn = document.getElementById('parse-btn');
-            const errorEl = document.getElementById('parse-error');
-            const previewEl = document.getElementById('parse-preview');
+            const btn = document.getElementById(prefix + 'parse-btn');
+            const errorEl = document.getElementById(prefix + 'parse-error');
+            const previewEl = document.getElementById(prefix + 'parse-preview');
             errorEl.style.display = 'none';
             previewEl.style.display = 'none';
             btn.disabled = true;
@@ -1140,7 +1178,7 @@
                 body: JSON.stringify({ text }),
             });
             btn.disabled = false;
-            btn.textContent = 'Parse Update';
+            btn.textContent = prefix ? 'Update' : 'Parse Update';
 
             if (!resp || !resp.ok) {
                 errorEl.textContent = 'Failed to parse update. Please try again.';
@@ -1153,7 +1191,7 @@
             if (parsed.account_id == null) {
                 errorEl.innerHTML = 'Could not identify the account. Please select manually:';
                 const selectHtml = `
-                    <select id="manual-account-select" style="margin-top:0.5rem;">
+                    <select id="${prefix}manual-account-select" style="margin-top:0.5rem;">
                         <option value="">Select an account</option>
                         ${accountsCache.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}
                     </select>
@@ -1162,17 +1200,18 @@
                 errorEl.style.display = 'block';
 
                 previewEl.style.display = 'block';
-                previewEl.innerHTML = renderPreview({ ...parsed, _manualSelect: true });
+                previewEl.innerHTML = renderPreview({ ...parsed, _manualSelect: true }, prefix);
                 return;
             }
 
             previewEl.style.display = 'block';
-            previewEl.innerHTML = renderPreview(parsed);
+            previewEl.innerHTML = renderPreview(parsed, prefix);
         }
 
-        function renderPreview(parsed) {
+        function renderPreview(parsed, prefix = '') {
             const account = accountsCache.find(a => a.id === parsed.account_id);
             const accountName = account ? account.name : (parsed._manualSelect ? '(Select above)' : 'Unknown');
+            const parsedJson = JSON.stringify({...parsed, _prefix: prefix}).replace(/"/g, '&quot;');
             return `
                 <div class="preview-card">
                     <div class="field"><span class="field-label">Account:</span> ${esc(accountName)}</div>
@@ -1180,17 +1219,18 @@
                     <div class="field"><span class="field-label">Payment Made:</span> ${parsed.payment_made != null ? formatMoney(parsed.payment_made) : '—'}</div>
                     <div class="field"><span class="field-label">Note:</span> ${esc(parsed.note || '')}</div>
                     <div class="preview-actions">
-                        <button class="btn btn-success" onclick="confirmUpdate(${JSON.stringify(parsed).replace(/"/g, '&quot;')})">Confirm</button>
-                        <button class="btn btn-outline" onclick="cancelUpdate()">Cancel</button>
+                        <button class="btn btn-success" onclick="confirmUpdate(${parsedJson})">Confirm</button>
+                        <button class="btn btn-outline" onclick="cancelUpdate('${prefix}')">Cancel</button>
                     </div>
                 </div>
             `;
         }
 
         async function confirmUpdate(parsed) {
+            const prefix = parsed._prefix || '';
             let accountId = parsed.account_id;
             if (!accountId) {
-                const sel = document.getElementById('manual-account-select');
+                const sel = document.getElementById(prefix + 'manual-account-select');
                 if (sel) accountId = parseInt(sel.value);
                 if (!accountId) {
                     alert('Please select an account.');
@@ -1207,22 +1247,23 @@
                 body: JSON.stringify(body),
             });
 
-            const previewEl = document.getElementById('parse-preview');
-            const errorEl = document.getElementById('parse-error');
+            const previewEl = document.getElementById(prefix + 'parse-preview');
+            const errorEl = document.getElementById(prefix + 'parse-error');
 
             if (resp && resp.ok) {
                 previewEl.innerHTML = '<div class="alert alert-success">Balance updated successfully!</div>';
                 errorEl.style.display = 'none';
-                document.getElementById('update-text').value = '';
+                document.getElementById(prefix + 'update-text').value = '';
                 setTimeout(() => { previewEl.style.display = 'none'; }, 3000);
+                if (prefix) loadDashboard();
             } else {
                 previewEl.innerHTML = '<div class="alert alert-error">Failed to save update.</div>';
             }
         }
 
-        function cancelUpdate() {
-            document.getElementById('parse-preview').style.display = 'none';
-            document.getElementById('parse-error').style.display = 'none';
+        function cancelUpdate(prefix = '') {
+            document.getElementById(prefix + 'parse-preview').style.display = 'none';
+            document.getElementById(prefix + 'parse-error').style.display = 'none';
         }
 
         // ---------- History ----------
