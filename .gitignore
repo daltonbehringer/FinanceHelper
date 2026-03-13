@@ -5,3 +5,4 @@ finance.db
 .venv/
 .claude/settings.local.json
 CLAUDE.md
+finance.db.bak
