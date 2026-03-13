@@ -390,6 +390,7 @@
         <a onclick="switchTab('dashboard')" data-tab="dashboard" class="active">Dashboard</a>
         <a onclick="switchTab('accounts')" data-tab="accounts">Accounts</a>
         <a onclick="switchTab('expenses')" data-tab="expenses">Expenses</a>
+        <a onclick="switchTab('income')" data-tab="income">Income</a>
         <a onclick="switchTab('update')" data-tab="update">Update Balances</a>
         <a onclick="switchTab('history')" data-tab="history">History</a>
     </nav>
@@ -593,6 +594,79 @@
             </div>
         </section>
 
+        <!-- Income -->
+        <section id="income">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="font-size:1.25rem;">Recurring Income</h2>
+                <div style="display:flex; gap:0.75rem; align-items:center;">
+                    <label style="font-size:0.8rem; cursor:pointer;">
+                        <input type="checkbox" id="show-inactive-income" onchange="loadIncome()"> Show deactivated
+                    </label>
+                    <button class="btn btn-primary" onclick="showAddIncomeForm()">Add Income</button>
+                </div>
+            </div>
+            <div id="add-income-form" class="card" style="display:none;">
+                <h3>Add Recurring Income</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="inc-name" placeholder="e.g. Primary Job">
+                    </div>
+                    <div class="form-group">
+                        <label>Amount</label>
+                        <input type="number" id="inc-amount" step="0.01" placeholder="0.00">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Frequency</label>
+                        <select id="inc-frequency">
+                            <option value="weekly">Weekly</option>
+                            <option value="biweekly">Biweekly (every 2 weeks)</option>
+                            <option value="semimonthly">Semimonthly (twice a month)</option>
+                            <option value="monthly" selected>Monthly</option>
+                            <option value="annual">Annual</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Pay Day of Month <span style="font-weight:normal; color:var(--gray-600);">Optional, 1–28</span></label>
+                        <input type="number" id="inc-income-day" min="1" max="28" placeholder="Optional">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Most Recent Pay Date <span style="font-weight:normal; color:var(--gray-600);">Optional — helps AI predict upcoming dates</span></label>
+                        <input type="date" id="inc-last-pay-date">
+                    </div>
+                    <div></div>
+                </div>
+                <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+                    <button class="btn btn-success" onclick="createIncome()">Save</button>
+                    <button class="btn btn-outline" onclick="hideAddIncomeForm()">Cancel</button>
+                </div>
+            </div>
+            <div class="card" style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Amount</th>
+                            <th>Frequency</th>
+                            <th>Monthly Equiv.</th>
+                            <th>Pay Day</th>
+                            <th>Last Paid</th>
+                            <th>Next Payday</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="income-table-body"></tbody>
+                </table>
+                <div id="income-empty" class="empty-state" style="display:none;">
+                    No income sources yet. Add one to improve AI recommendations.
+                </div>
+            </div>
+        </section>
+
         <!-- Update Balances -->
         <section id="update">
             <h2 style="font-size:1.25rem; margin-bottom:1rem;">Update Balances</h2>
@@ -703,6 +777,51 @@
         </div>
     </div>
 
+    <!-- Edit Income Modal -->
+    <div class="modal-overlay" id="edit-income-modal">
+        <div class="modal">
+            <h3>Edit Income</h3>
+            <input type="hidden" id="edit-income-id">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="edit-inc-name">
+                </div>
+                <div class="form-group">
+                    <label>Amount</label>
+                    <input type="number" id="edit-inc-amount" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Frequency</label>
+                    <select id="edit-inc-frequency">
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Biweekly (every 2 weeks)</option>
+                        <option value="semimonthly">Semimonthly (twice a month)</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="annual">Annual</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Pay Day of Month <span style="font-weight:normal; color:var(--gray-600);">Optional, 1–28</span></label>
+                    <input type="number" id="edit-inc-income-day" min="1" max="28" placeholder="Optional">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Most Recent Pay Date <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                    <input type="date" id="edit-inc-last-pay-date">
+                </div>
+                <div></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeEditIncomeModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveIncomeEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Expense Modal -->
     <div class="modal-overlay" id="edit-expense-modal">
         <div class="modal">
@@ -739,6 +858,41 @@
         // ---------- State ----------
         let accountsCache = [];
         let expensesCache = [];
+        let incomeCache = [];
+
+        const MONTHLY_MULTIPLIERS = {
+            weekly: 52 / 12,
+            biweekly: 26 / 12,
+            semimonthly: 2.0,
+            monthly: 1.0,
+            annual: 1 / 12,
+        };
+
+        function monthlyEquiv(amount, frequency) {
+            return amount * (MONTHLY_MULTIPLIERS[frequency] || 1);
+        }
+
+        function formatFrequency(f) {
+            return { weekly: 'Weekly', biweekly: 'Biweekly', semimonthly: 'Semimonthly', monthly: 'Monthly', annual: 'Annual' }[f] || f;
+        }
+
+        function nextPayday(lastPayDate, frequency) {
+            if (!lastPayDate) return '—';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            let d = new Date(lastPayDate + 'T00:00:00');
+            function advance(date) {
+                const next = new Date(date);
+                if (frequency === 'weekly')         next.setDate(next.getDate() + 7);
+                else if (frequency === 'biweekly')  next.setDate(next.getDate() + 14);
+                else if (frequency === 'semimonthly') next.setDate(next.getDate() + 15);
+                else if (frequency === 'monthly')   next.setMonth(next.getMonth() + 1);
+                else if (frequency === 'annual')    next.setFullYear(next.getFullYear() + 1);
+                return next;
+            }
+            while (d <= today) d = advance(d);
+            return formatDate(d.toISOString().split('T')[0]);
+        }
 
         // ---------- Utilities ----------
         function getToken() {
@@ -808,6 +962,7 @@
             if (tabId === 'dashboard') loadDashboard();
             else if (tabId === 'accounts') loadAccounts();
             else if (tabId === 'expenses') loadExpenses();
+            else if (tabId === 'income') loadIncome();
             else if (tabId === 'history') loadHistory();
             else if (tabId === 'update') loadAccountsCacheOnly();
         }
@@ -1153,6 +1308,124 @@
             if (resp && resp.ok) loadExpenses();
         }
 
+        // ---------- Income ----------
+        async function loadIncome() {
+            const includeInactive = document.getElementById('show-inactive-income').checked ? 1 : 0;
+            const resp = await apiFetch(`/api/income?include_inactive=${includeInactive}`);
+            if (!resp || !resp.ok) return;
+            const income = await resp.json();
+            incomeCache = income;
+
+            const tbody = document.getElementById('income-table-body');
+            const emptyEl = document.getElementById('income-empty');
+
+            if (income.length === 0) {
+                tbody.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+            tbody.innerHTML = income.map(i => `
+                <tr style="${i.is_active ? '' : 'opacity:0.5;'}">
+                    <td>${esc(i.name)}</td>
+                    <td>${formatMoney(i.amount)}</td>
+                    <td>${formatFrequency(i.frequency)}</td>
+                    <td style="color:var(--green);">${formatMoney(monthlyEquiv(i.amount, i.frequency))}</td>
+                    <td>${i.income_day != null ? 'Day ' + i.income_day : '—'}</td>
+                    <td>${i.last_pay_date ? formatDate(i.last_pay_date) : '—'}</td>
+                    <td style="color:var(--green); font-weight:500;">${nextPayday(i.last_pay_date, i.frequency)}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="openEditIncomeModal(${i.id})">Edit</button>
+                        ${i.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateIncome(${i.id})">Deactivate</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showAddIncomeForm() { document.getElementById('add-income-form').style.display = 'block'; }
+        function hideAddIncomeForm() {
+            document.getElementById('add-income-form').style.display = 'none';
+            document.getElementById('inc-name').value = '';
+            document.getElementById('inc-amount').value = '';
+            document.getElementById('inc-frequency').value = 'monthly';
+            document.getElementById('inc-income-day').value = '';
+            document.getElementById('inc-last-pay-date').value = '';
+        }
+
+        async function createIncome() {
+            const name = document.getElementById('inc-name').value.trim();
+            const amount = parseFloat(document.getElementById('inc-amount').value);
+            if (!name || isNaN(amount)) {
+                alert('Name and amount are required.');
+                return;
+            }
+            const body = {
+                name,
+                amount,
+                frequency: document.getElementById('inc-frequency').value,
+            };
+            const incomeDay = document.getElementById('inc-income-day').value;
+            if (incomeDay) body.income_day = parseInt(incomeDay);
+            const lastPayDate = document.getElementById('inc-last-pay-date').value;
+            if (lastPayDate) body.last_pay_date = lastPayDate;
+
+            const resp = await apiFetch('/api/income', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                hideAddIncomeForm();
+                loadIncome();
+            } else if (resp) {
+                const err = await resp.json();
+                alert(err.detail || 'Failed to save income.');
+            }
+        }
+
+        function openEditIncomeModal(id) {
+            const i = incomeCache.find(x => x.id === id);
+            if (!i) return;
+            document.getElementById('edit-income-id').value = i.id;
+            document.getElementById('edit-inc-name').value = i.name;
+            document.getElementById('edit-inc-amount').value = i.amount;
+            document.getElementById('edit-inc-frequency').value = i.frequency;
+            document.getElementById('edit-inc-income-day').value = i.income_day != null ? i.income_day : '';
+            document.getElementById('edit-inc-last-pay-date').value = i.last_pay_date || '';
+            document.getElementById('edit-income-modal').classList.add('active');
+        }
+
+        function closeEditIncomeModal() {
+            document.getElementById('edit-income-modal').classList.remove('active');
+        }
+
+        async function saveIncomeEdit() {
+            const id = document.getElementById('edit-income-id').value;
+            const body = {
+                name: document.getElementById('edit-inc-name').value,
+                amount: parseFloat(document.getElementById('edit-inc-amount').value),
+                frequency: document.getElementById('edit-inc-frequency').value,
+            };
+            const incomeDay = document.getElementById('edit-inc-income-day').value;
+            if (incomeDay) body.income_day = parseInt(incomeDay);
+            const lastPayDate = document.getElementById('edit-inc-last-pay-date').value;
+            if (lastPayDate) body.last_pay_date = lastPayDate;
+
+            const resp = await apiFetch(`/api/income/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(body),
+            });
+            if (resp && resp.ok) {
+                closeEditIncomeModal();
+                loadIncome();
+            }
+        }
+
+        async function deactivateIncome(id) {
+            if (!confirm('Deactivate this income source?')) return;
+            const resp = await apiFetch(`/api/income/${id}/deactivate`, { method: 'POST' });
+            if (resp && resp.ok) loadIncome();
+        }
+
         // ---------- Update Balances ----------
         async function loadAccountsCacheOnly() {
             if (accountsCache.length === 0) {
@@ -1187,6 +1460,12 @@
             }
 
             const parsed = await resp.json();
+
+            if (parsed.new_balance == null && parsed.payment_made == null) {
+                errorEl.textContent = 'No balance or payment amount found. Please include a dollar amount (e.g. "Chase balance is $4,200" or "paid $300 on Discover").';
+                errorEl.style.display = 'block';
+                return;
+            }
 
             if (parsed.account_id == null) {
                 errorEl.innerHTML = 'Could not identify the account. Please select manually:';

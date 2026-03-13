@@ -13,6 +13,7 @@ from backend.db import init_db
 from backend.routers.accounts import router as accounts_router
 from backend.routers.ai import router as ai_router
 from backend.routers.expenses import router as expenses_router
+from backend.routers.income import router as income_router
 from backend.routers.snapshots import router as snapshots_router
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -39,6 +40,7 @@ app.include_router(accounts_router)
 app.include_router(snapshots_router)
 app.include_router(ai_router)
 app.include_router(expenses_router)
+app.include_router(income_router)
 
 
 @app.get("/")

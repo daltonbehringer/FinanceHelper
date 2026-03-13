@@ -79,6 +79,13 @@ def _migrate_snapshots_fk(conn: sqlite3.Connection):
     conn.execute("DROP TABLE account_snapshots_backup")
 
 
+def _migrate_income_last_pay_date(conn: sqlite3.Connection):
+    """Add last_pay_date column to recurring_income."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(recurring_income)").fetchall()]
+    if "last_pay_date" not in cols and cols:  # only if table already exists
+        conn.execute("ALTER TABLE recurring_income ADD COLUMN last_pay_date TEXT")
+
+
 def _migrate_expenses_due_day(conn: sqlite3.Connection):
     """Make due_day nullable on recurring_expenses."""
     row = conn.execute(
@@ -112,6 +119,7 @@ def init_db():
         _migrate_accounts_table(conn)
         _migrate_snapshots_fk(conn)
         _migrate_expenses_due_day(conn)
+        _migrate_income_last_pay_date(conn)
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -156,6 +164,18 @@ def init_db():
             due_day     INTEGER CHECK(due_day IS NULL OR due_day BETWEEN 1 AND 28),
             is_active   INTEGER NOT NULL DEFAULT 1,
             created_at  TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS recurring_income (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL REFERENCES users(id),
+            name            TEXT NOT NULL,
+            amount          REAL NOT NULL,
+            frequency       TEXT NOT NULL,
+            income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 28),
+            last_pay_date   TEXT,
+            is_active       INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL
         );
     """)
     conn.commit()

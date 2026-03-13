@@ -91,13 +91,45 @@ Current accounts:
     return parsed
 
 
+MONTHLY_MULTIPLIERS = {
+    "weekly": 52 / 12,
+    "biweekly": 26 / 12,
+    "semimonthly": 2.0,
+    "monthly": 1.0,
+    "annual": 1 / 12,
+}
+
+
+def _get_income_for_user(user_id: int) -> list[dict]:
+    rows = fetchall(
+        "SELECT id, name, amount, frequency, income_day FROM recurring_income WHERE user_id = ? AND is_active = 1",
+        (user_id,),
+    )
+    return [dict(r) for r in rows]
+
+
 @router.post("/recommend")
 async def recommend(user_id: int = Depends(get_current_user)):
     accounts = _get_accounts_for_user(user_id)
+    income = _get_income_for_user(user_id)
     accounts_json = json.dumps(accounts, indent=2)
     today = date.today().isoformat()
 
     investment_types_list = ", ".join(sorted(INVESTMENT_TYPES))
+
+    income_section = ""
+    if income:
+        monthly_total = sum(
+            r["amount"] * MONTHLY_MULTIPLIERS.get(r["frequency"], 1.0) for r in income
+        )
+        income_json = json.dumps(income, indent=2)
+        income_section = f"""
+Recurring income (use to assess cash flow and payoff capacity):
+{income_json}
+
+Estimated total monthly gross income: ${monthly_total:,.2f}
+If a source has a last_pay_date, use it with the frequency to calculate upcoming pay dates.
+"""
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
 Recommend the optimal debt payoff strategy. Be specific: name the account, explain why,
@@ -107,7 +139,7 @@ unless there is a strong reason to deviate. Today's date: {today}.
 Account type guidance:
 - Investment/retirement accounts ({investment_types_list}) are assets — do NOT recommend paying them off or withdrawing from them.
 - If an account has a promo_rate and promo_end_date, factor in the promotional expiry. Highlight any promos expiring soon and recommend paying off that balance before the promo ends to avoid deferred interest.
-
+{income_section}
 Current accounts:
 {accounts_json}"""
 
