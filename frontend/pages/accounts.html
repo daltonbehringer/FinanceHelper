@@ -1,0 +1,99 @@
+<section id="accounts">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 style="font-size:1.25rem;">Accounts</h2>
+        <div style="display:flex; gap:0.75rem; align-items:center;">
+            <label style="font-size:0.8rem; cursor:pointer;">
+                <input type="checkbox" id="show-inactive" onchange="loadAccounts()"> Show deactivated
+            </label>
+            <button class="btn btn-primary" onclick="showAddForm()">Add Account</button>
+        </div>
+    </div>
+    <div id="add-account-form" class="card" style="display:none;">
+        <h3>Add Account</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="acc-name" placeholder="e.g. Chase Sapphire">
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select id="acc-type">
+                    <option value="credit_card">Credit Card</option>
+                    <option value="checking">Checking</option>
+                    <option value="savings">Savings</option>
+                    <option value="loan">Loan</option>
+                    <option value="mortgage">Mortgage</option>
+                    <option value="line_of_credit">Line of Credit</option>
+                    <option value="401k">401(k)</option>
+                    <option value="ira">IRA</option>
+                    <option value="roth_ira">Roth IRA</option>
+                    <option value="brokerage">Brokerage</option>
+                    <option value="hsa">HSA</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Balance</label>
+                <input type="number" id="acc-balance" step="0.01" value="0">
+            </div>
+            <div class="form-group">
+                <label>Interest Rate (%)</label>
+                <input type="number" id="acc-rate" step="0.01" value="0">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Minimum Payment</label>
+                <input type="number" id="acc-min-payment" step="0.01" placeholder="Optional">
+            </div>
+            <div class="form-group">
+                <label>Credit Limit</label>
+                <input type="number" id="acc-credit-limit" step="0.01" placeholder="Optional">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Due Date</label>
+                <input type="date" id="acc-due-date">
+            </div>
+            <div class="form-group">
+                <label>Promo Rate (%) <span style="font-weight:normal; color:var(--gray-600);">Optional — e.g. 0 for 0% APR</span></label>
+                <input type="number" id="acc-promo-rate" step="0.01" placeholder="e.g. 0">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Promo End Date <span style="font-weight:normal; color:var(--gray-600);">Optional</span></label>
+                <input type="date" id="acc-promo-end-date">
+            </div>
+            <div></div>
+        </div>
+        <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+            <button class="btn btn-success" onclick="createAccount()">Save</button>
+            <button class="btn btn-outline" onclick="hideAddForm()">Cancel</button>
+        </div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Balance</th>
+                    <th>Rate</th>
+                    <th>Promo</th>
+                    <th>Min Payment</th>
+                    <th>Credit Limit</th>
+                    <th>Due Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="accounts-table-body"></tbody>
+        </table>
+        <div id="accounts-empty" class="empty-state" style="display:none;">
+            No accounts yet. Add one to get started.
+        </div>
+    </div>
+</section>

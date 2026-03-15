@@ -1,0 +1,12 @@
+<section id="update">
+    <h2 style="font-size:1.25rem; margin-bottom:1rem;">Update Balances</h2>
+    <div class="card">
+        <div class="form-group">
+            <label>Describe your update in plain English</label>
+            <textarea id="update-text" rows="3" placeholder='e.g. "paid $300 on Chase Sapphire, new balance is $4,200"'></textarea>
+        </div>
+        <button class="btn btn-primary" id="parse-btn" onclick="parseUpdate()">Parse Update</button>
+        <div id="parse-error" class="alert alert-error" style="display:none; margin-top:1rem;"></div>
+        <div id="parse-preview" style="display:none;"></div>
+    </div>
+</section>

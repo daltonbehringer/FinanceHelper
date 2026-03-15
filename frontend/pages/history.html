@@ -1,0 +1,28 @@
+<section id="history">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 style="font-size:1.25rem;">History</h2>
+        <div class="form-group" style="margin-bottom:0; width:200px;">
+            <select id="history-filter" onchange="loadHistory()">
+                <option value="">All Accounts</option>
+            </select>
+        </div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Balance</th>
+                    <th>Payment</th>
+                    <th>Note</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="history-table-body"></tbody>
+        </table>
+        <div id="history-empty" class="empty-state" style="display:none;">
+            No history yet. Update a balance to see entries here.
+        </div>
+    </div>
+</section>

@@ -1,0 +1,38 @@
+<section id="dashboard" class="active">
+    <div class="dashboard-top">
+        <!-- Left: Quick Balance Update -->
+        <div class="card" style="margin-bottom:0;">
+            <div class="form-group" style="margin-bottom:0.5rem;">
+                <label>Quick Balance Update</label>
+                <textarea id="dash-update-text" rows="3" placeholder='e.g. "paid $300 on Chase Sapphire, new balance is $4,200"'></textarea>
+            </div>
+            <button class="btn btn-primary" id="dash-parse-btn" onclick="parseUpdate('dash-')">Update</button>
+            <div id="dash-parse-error" class="alert alert-error" style="display:none; margin-top:0.75rem;"></div>
+            <div id="dash-parse-preview" style="display:none;"></div>
+        </div>
+        <!-- Right: Net Worth + Monthly Expenses -->
+        <div>
+            <div class="card net-worth" style="margin-bottom:0.75rem;">
+                <h2>Net Worth</h2>
+                <div class="amount" id="net-worth-amount">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Monthly Recurring</div>
+                <div class="stat-value" id="monthly-expenses-total">$0.00</div>
+            </div>
+        </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.75rem;">
+        <span style="font-size:0.8rem; font-weight:600; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.05em;">Accounts</span>
+        <button class="btn btn-primary" id="recommend-btn" onclick="getRecommendation()">Get Recommendation</button>
+    </div>
+    <div class="recommendation" id="recommendation-panel" style="display:none; margin-bottom:1rem;"></div>
+    <div style="margin-bottom:1rem;">
+        <div style="font-size:0.75rem; font-weight:600; color:var(--red); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Debts</div>
+        <div class="accounts-grid" id="dashboard-debts"></div>
+    </div>
+    <div>
+        <div style="font-size:0.75rem; font-weight:600; color:var(--green); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Assets</div>
+        <div class="accounts-grid" id="dashboard-assets"></div>
+    </div>
+</section>
