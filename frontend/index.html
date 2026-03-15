@@ -425,6 +425,7 @@
                 <span style="font-size:0.8rem; font-weight:600; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.05em;">Accounts</span>
                 <button class="btn btn-primary" id="recommend-btn" onclick="getRecommendation()">Get Recommendation</button>
             </div>
+            <div class="recommendation" id="recommendation-panel" style="display:none; margin-bottom:1rem;"></div>
             <div style="margin-bottom:1rem;">
                 <div style="font-size:0.75rem; font-weight:600; color:var(--red); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Debts</div>
                 <div class="accounts-grid" id="dashboard-debts"></div>
@@ -433,7 +434,6 @@
                 <div style="font-size:0.75rem; font-weight:600; color:var(--green); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Assets</div>
                 <div class="accounts-grid" id="dashboard-assets"></div>
             </div>
-            <div class="recommendation" id="recommendation-panel" style="display:none; margin-top:1rem;"></div>
         </section>
 
         <!-- Accounts -->
@@ -1066,7 +1066,56 @@
             }
             const data = await resp.json();
             panel.style.display = 'block';
-            panel.textContent = data.recommendation;
+            const formatted = formatRecommendation(data.recommendation);
+            panel.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <strong>Recommendation</strong>
+                    <button class="btn btn-outline btn-sm" onclick="saveRecommendationPDF()">Save as PDF</button>
+                </div>
+                <div id="recommendation-text">${formatted}</div>
+            `;
+        }
+
+        function formatRecommendation(text) {
+            function inlineFmt(str) {
+                // Escape HTML first, then convert **bold** and *italic*
+                let safe = esc(str);
+                safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                safe = safe.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                return safe;
+            }
+            return text
+                .split('\n')
+                .map(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return '<div style="height:0.4rem;"></div>';
+                    if (/^#{1,3}\s/.test(trimmed)) return `<div style="font-weight:700; margin-top:0.5rem;">${inlineFmt(trimmed.replace(/^#+\s*/, ''))}</div>`;
+                    if (/^[-*]\s/.test(trimmed)) return `<div style="padding-left:1rem;">&#8226; ${inlineFmt(trimmed.replace(/^[-*]\s*/, ''))}</div>`;
+                    if (/^\d+\.\s/.test(trimmed)) return `<div style="padding-left:1rem;">${inlineFmt(trimmed)}</div>`;
+                    return `<p style="margin:0.25rem 0;">${inlineFmt(trimmed)}</p>`;
+                })
+                .join('');
+        }
+
+        function saveRecommendationPDF() {
+            const textEl = document.getElementById('recommendation-text');
+            if (!textEl) return;
+            const printWin = window.open('', '_blank');
+            printWin.document.write(`
+                <html><head><title>Finance Recommendation</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 2rem; line-height: 1.6; color: #333; }
+                    strong { display: block; margin-top: 1rem; font-size: 1.1rem; }
+                    div { margin: 0.25rem 0; }
+                    p { margin: 0.25rem 0; }
+                </style></head>
+                <body>
+                    <h2>Finance Recommendation — ${new Date().toLocaleDateString()}</h2>
+                    ${textEl.innerHTML}
+                </body></html>
+            `);
+            printWin.document.close();
+            printWin.print();
         }
 
         // ---------- Accounts ----------
@@ -1335,6 +1384,7 @@
                     <td>${i.last_pay_date ? formatDate(i.last_pay_date) : '—'}</td>
                     <td style="color:var(--green); font-weight:500;">${nextPayday(i.last_pay_date, i.frequency)}</td>
                     <td>
+                        ${i.is_active && i.last_pay_date ? `<button class="btn btn-success btn-sm" onclick="markAsPaid(${i.id})">Mark Paid</button>` : ''}
                         <button class="btn btn-outline btn-sm" onclick="openEditIncomeModal(${i.id})">Edit</button>
                         ${i.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateIncome(${i.id})">Deactivate</button>` : ''}
                     </td>
@@ -1426,6 +1476,15 @@
             if (resp && resp.ok) loadIncome();
         }
 
+        async function markAsPaid(id) {
+            const today = new Date().toISOString().split('T')[0];
+            const resp = await apiFetch(`/api/income/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ last_pay_date: today }),
+            });
+            if (resp && resp.ok) loadIncome();
+        }
+
         // ---------- Update Balances ----------
         async function loadAccountsCacheOnly() {
             if (accountsCache.length === 0) {
@@ -1490,10 +1549,12 @@
         function renderPreview(parsed, prefix = '') {
             const account = accountsCache.find(a => a.id === parsed.account_id);
             const accountName = account ? account.name : (parsed._manualSelect ? '(Select above)' : 'Unknown');
+            const currentBalance = account ? (account.current_balance ?? account.balance ?? null) : null;
             const parsedJson = JSON.stringify({...parsed, _prefix: prefix}).replace(/"/g, '&quot;');
             return `
                 <div class="preview-card">
                     <div class="field"><span class="field-label">Account:</span> ${esc(accountName)}</div>
+                    ${currentBalance != null ? `<div class="field"><span class="field-label">Current Balance:</span> ${formatMoney(currentBalance)}</div>` : ''}
                     <div class="field"><span class="field-label">New Balance:</span> ${parsed.new_balance != null ? formatMoney(parsed.new_balance) : '—'}</div>
                     <div class="field"><span class="field-label">Payment Made:</span> ${parsed.payment_made != null ? formatMoney(parsed.payment_made) : '—'}</div>
                     <div class="field"><span class="field-label">Note:</span> ${esc(parsed.note || '')}</div>
@@ -1587,11 +1648,10 @@
         }
 
         async function restoreSnapshot(id) {
-            if (!confirm('Restore this balance? A new snapshot will be created with this balance.')) return;
+            if (!confirm('Undo to this point? All newer snapshots for this account will be removed.')) return;
             const resp = await apiFetch(`/api/snapshots/${id}/restore`, { method: 'POST' });
             if (resp && resp.ok) {
                 loadHistory();
-                // Refresh accounts cache so dashboard reflects the restored balance
                 const accountsResp = await apiFetch('/api/accounts');
                 if (accountsResp && accountsResp.ok) accountsCache = await accountsResp.json();
             } else {

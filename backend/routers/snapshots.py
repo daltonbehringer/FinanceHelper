@@ -86,22 +86,15 @@ async def restore_snapshot(snapshot_id: int, user_id: int = Depends(get_current_
     if not original:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
-    now = datetime.utcnow().isoformat()
-    note = f"Restored from {original['recorded_at'][:10]}"
+    # Delete all snapshots for this account that came after the selected one
     execute(
-        """
-        INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (original["account_id"], user_id, original["balance"], None, note, now),
+        "DELETE FROM account_snapshots WHERE account_id = ? AND user_id = ? AND id > ?",
+        (original["account_id"], user_id, snapshot_id),
     )
+    # Revert the account balance to the selected snapshot's balance
     execute(
         "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
         (original["balance"], original["account_id"], user_id),
     )
 
-    row = fetchone(
-        "SELECT s.*, a.name AS account_name FROM account_snapshots s JOIN accounts a ON s.account_id = a.id WHERE s.user_id = ? ORDER BY s.id DESC LIMIT 1",
-        (user_id,),
-    )
-    return dict(row)
+    return {"status": "restored", "balance": original["balance"]}
