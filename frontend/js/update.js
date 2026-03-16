@@ -1,4 +1,4 @@
-// ---------- Update Balances ----------
+// ---------- Ask / Update Balances ----------
 
 async function loadAccountsCacheOnly() {
     if (accountsCache.length === 0) {
@@ -7,7 +7,7 @@ async function loadAccountsCacheOnly() {
     }
 }
 
-async function parseUpdate(prefix = '') {
+async function submitChat(prefix = '') {
     const text = document.getElementById(prefix + 'update-text').value.trim();
     if (!text) return;
 
@@ -17,23 +17,30 @@ async function parseUpdate(prefix = '') {
     errorEl.style.display = 'none';
     previewEl.style.display = 'none';
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Parsing...';
+    btn.innerHTML = '<span class="spinner"></span>Thinking...';
 
-    const resp = await apiFetch('/api/ai/parse-update', {
+    const resp = await apiFetch('/api/ai/chat', {
         method: 'POST',
         body: JSON.stringify({ text }),
     });
     btn.disabled = false;
-    btn.textContent = prefix ? 'Update' : 'Parse Update';
+    btn.textContent = prefix ? 'Send' : 'Send';
 
     if (!resp || !resp.ok) {
-        errorEl.textContent = 'Failed to parse update. Please try again.';
+        errorEl.textContent = 'Something went wrong. Please try again.';
         errorEl.style.display = 'block';
         return;
     }
 
     const parsed = await resp.json();
 
+    if (parsed.type === 'question') {
+        previewEl.style.display = 'block';
+        previewEl.innerHTML = renderAnswer(parsed.answer);
+        return;
+    }
+
+    // Balance update flow
     if (parsed.new_balance == null && parsed.payment_made == null) {
         errorEl.textContent = 'No balance or payment amount found. Please include a dollar amount (e.g. "Chase balance is $4,200" or "paid $300 on Discover").';
         errorEl.style.display = 'block';
@@ -58,6 +65,18 @@ async function parseUpdate(prefix = '') {
 
     previewEl.style.display = 'block';
     previewEl.innerHTML = renderPreview(parsed, prefix);
+}
+
+function renderAnswer(text) {
+    const formatted = formatRecommendation(text);
+    return `
+        <div class="card" style="margin-top:1rem; background:var(--blue-bg); border-color:var(--blue);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                <strong style="font-size:0.85rem; color:var(--navy);">Advisor</strong>
+            </div>
+            <div style="font-size:0.9rem; line-height:1.6;">${formatted}</div>
+        </div>
+    `;
 }
 
 function renderPreview(parsed, prefix = '') {

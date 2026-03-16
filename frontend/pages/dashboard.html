@@ -1,12 +1,12 @@
 <section id="dashboard" class="active">
     <div class="dashboard-top">
-        <!-- Left: Quick Balance Update -->
+        <!-- Left: Ask Anything -->
         <div class="card" style="margin-bottom:0;">
             <div class="form-group" style="margin-bottom:0.5rem;">
-                <label>Quick Balance Update</label>
-                <textarea id="dash-update-text" rows="3" placeholder='e.g. "paid $300 on Chase Sapphire, new balance is $4,200"'></textarea>
+                <label>Ask your advisor</label>
+                <textarea id="dash-update-text" rows="3" placeholder='Update a balance, ask about upcoming bills, or get advice — e.g. "paid $300 on Chase" or "when is rent due?"'></textarea>
             </div>
-            <button class="btn btn-primary" id="dash-parse-btn" onclick="parseUpdate('dash-')">Update</button>
+            <button class="btn btn-primary" id="dash-parse-btn" onclick="submitChat('dash-')">Send</button>
             <div id="dash-parse-error" class="alert alert-error" style="display:none; margin-top:0.75rem;"></div>
             <div id="dash-parse-preview" style="display:none;"></div>
         </div>

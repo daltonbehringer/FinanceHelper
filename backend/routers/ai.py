@@ -16,6 +16,11 @@ MODEL = "claude-sonnet-4-20250514"
 INVESTMENT_TYPES = {"401k", "ira", "roth_ira", "brokerage", "hsa"}
 
 
+class ChatRequest(BaseModel):
+    text: str
+
+
+# Keep the old model name for backwards compat
 class ParseUpdateRequest(BaseModel):
     text: str
 
@@ -49,37 +54,75 @@ def _strip_markdown_fencing(text: str) -> str:
     return text.strip()
 
 
-@router.post("/parse-update")
-async def parse_update(body: ParseUpdateRequest, user_id: int = Depends(get_current_user)):
+def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
+    """Build full financial context string. Returns (accounts, context_str)."""
     accounts = _get_accounts_for_user(user_id)
-    accounts_json = json.dumps(accounts, indent=2)
+    income = _get_income_for_user(user_id)
+    expenses = _get_expenses_for_user(user_id)
 
-    system_prompt = f"""You are a financial data parser. The user will describe a balance update or payment in natural language.
-Given the list of accounts below, return ONLY valid JSON — no explanation, no markdown.
+    parts = [f"Current accounts:\n{json.dumps(accounts, indent=2)}"]
 
-Format:
+    if income:
+        monthly_income = sum(
+            r["amount"] * MONTHLY_MULTIPLIERS.get(r["frequency"], 1.0) for r in income
+        )
+        parts.append(f"Recurring income:\n{json.dumps(income, indent=2)}\nEstimated total monthly gross income: ${monthly_income:,.2f}")
+
+    if expenses:
+        monthly_expenses = sum(e["amount"] for e in expenses)
+        parts.append(f"Recurring expenses:\n{json.dumps(expenses, indent=2)}\nTotal monthly expenses: ${monthly_expenses:,.2f}")
+
+    return accounts, "\n\n".join(parts)
+
+
+@router.post("/chat")
+async def chat(body: ChatRequest, user_id: int = Depends(get_current_user)):
+    _, financial_context = _build_financial_context(user_id)
+    today = date.today().isoformat()
+
+    system_prompt = f"""You are a personal finance advisor and assistant. Today's date: {today}.
+
+The user will send you a message. It could be:
+1. A balance update or payment (e.g. "paid $300 on Chase Sapphire", "Discover balance is now $1,850")
+2. A general question about their finances (e.g. "when is my next payment due?", "how much do I owe total?", "should I pay off my credit card or save?")
+
+STEP 1: Determine the intent. Return ONLY valid JSON — no explanation, no markdown fencing.
+
+If the message is a BALANCE UPDATE, return:
 {{
+  "type": "balance_update",
   "account_id": <int or null>,
   "new_balance": <float or null>,
   "payment_made": <float or null>,
-  "note": <string>
+  "note": <string summarizing what the user said>
 }}
 
-Rules:
+Balance update rules:
 - Set account_id to null if the account is ambiguous or unrecognized.
 - If the user states a specific new balance, use that as new_balance.
-- If the user says they made a payment but does NOT state a new balance, compute new_balance = current_balance - payment_made. Use the current_balance from the account data below.
-- Set payment_made to the payment amount if one was mentioned, otherwise null.
+- If the user says they made a payment but does NOT state a new balance, compute new_balance = current_balance - payment_made using the account data below.
+- Set payment_made to the payment amount if mentioned, otherwise null.
 - Set new_balance to null ONLY if no balance can be determined.
-- Note should summarize what the user said.
 
-Current accounts:
-{accounts_json}"""
+If the message is a QUESTION or general inquiry, return:
+{{
+  "type": "question",
+  "answer": <string — your helpful, concise response>
+}}
+
+Answer rules:
+- Be specific: reference actual account names, balances, rates, and dates from the data.
+- Keep answers concise but complete. Use plain text, no markdown.
+- For payoff strategy questions, prefer the debt avalanche method (highest interest rate first) unless there's a strong reason to deviate.
+- For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
+- If promo rates are expiring soon, proactively mention it.
+
+{financial_context}"""
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model=MODEL,
-        max_tokens=512,
+        max_tokens=1024,
         system=system_prompt,
         messages=[{"role": "user", "content": body.text}],
     )
@@ -93,6 +136,19 @@ Current accounts:
         raise HTTPException(status_code=422, detail="AI returned invalid JSON")
 
     return parsed
+
+
+@router.post("/parse-update")
+async def parse_update(body: ParseUpdateRequest, user_id: int = Depends(get_current_user)):
+    """Backwards-compatible endpoint — delegates to /chat."""
+    chat_req = ChatRequest(text=body.text)
+    result = await chat(chat_req, user_id)
+    if result.get("type") == "question":
+        # Old endpoint only expects balance updates, return empty parse
+        return {"account_id": None, "new_balance": None, "payment_made": None, "note": result.get("answer", "")}
+    # Strip the type field for old consumers
+    result.pop("type", None)
+    return result
 
 
 MONTHLY_MULTIPLIERS = {
