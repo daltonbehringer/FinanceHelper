@@ -48,9 +48,10 @@
             const modalsContainer = document.getElementById('modals-container');
             const pages = ['dashboard', 'accounts', 'expenses', 'income', 'update', 'history'];
 
+            const cacheBust = `?v=${Date.now()}`;
             const [modalsHtml, ...fragments] = await Promise.all([
-                fetch('/static/pages/modals.html').then(r => r.text()),
-                ...pages.map(p => fetch(`/static/pages/${p}.html`).then(r => r.text())),
+                fetch(`/static/pages/modals.html${cacheBust}`).then(r => r.text()),
+                ...pages.map(p => fetch(`/static/pages/${p}.html${cacheBust}`).then(r => r.text())),
             ]);
             main.innerHTML = fragments.join('\n');
             modalsContainer.innerHTML = modalsHtml;

@@ -15,6 +15,8 @@ class ExpenseCreate(BaseModel):
     amount: float
     category: Optional[str] = None
     due_day: Optional[int] = None  # 1-28, optional for subscriptions
+    is_recurring: bool = True
+    due_date: Optional[str] = None  # ISO date for one-time expenses
 
 
 class ExpenseUpdate(BaseModel):
@@ -22,6 +24,8 @@ class ExpenseUpdate(BaseModel):
     amount: Optional[float] = None
     category: Optional[str] = None
     due_day: Optional[int] = None
+    is_recurring: Optional[bool] = None
+    due_date: Optional[str] = None
 
 
 @router.get("/")
@@ -45,10 +49,11 @@ async def create_expense(body: ExpenseCreate, user_id: int = Depends(get_current
     now = datetime.utcnow().isoformat()
     execute(
         """
-        INSERT INTO recurring_expenses (user_id, name, amount, category, due_day, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO recurring_expenses (user_id, name, amount, category, due_day, is_recurring, due_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (user_id, body.name, body.amount, body.category, body.due_day, now),
+        (user_id, body.name, body.amount, body.category, body.due_day,
+         1 if body.is_recurring else 0, body.due_date, now),
     )
     row = fetchone(
         "SELECT * FROM recurring_expenses WHERE user_id = ? ORDER BY id DESC LIMIT 1",
@@ -74,6 +79,10 @@ async def update_expense(
 
     if "due_day" in updates and updates["due_day"] is not None and not (1 <= updates["due_day"] <= 28):
         raise HTTPException(status_code=422, detail="due_day must be between 1 and 28")
+
+    # SQLite stores booleans as integers
+    if "is_recurring" in updates:
+        updates["is_recurring"] = 1 if updates["is_recurring"] else 0
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [expense_id, user_id]

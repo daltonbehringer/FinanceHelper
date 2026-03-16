@@ -26,7 +26,7 @@ async function loadDashboard() {
     if (expensesResp && expensesResp.ok) {
         const expenses = await expensesResp.json();
         expensesCache = expenses;
-        const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const total = expenses.filter(e => e.is_recurring !== 0).reduce((sum, e) => sum + (e.amount || 0), 0);
         document.getElementById('monthly-expenses-total').textContent = formatMoney(total);
     }
 

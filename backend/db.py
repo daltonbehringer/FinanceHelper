@@ -111,6 +111,17 @@ def _migrate_expenses_due_day(conn: sqlite3.Connection):
     conn.execute("DROP TABLE recurring_expenses_backup")
 
 
+def _migrate_expenses_one_time(conn: sqlite3.Connection):
+    """Add is_recurring and due_date columns to recurring_expenses."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(recurring_expenses)").fetchall()]
+    if not cols:
+        return  # table doesn't exist yet
+    if "is_recurring" not in cols:
+        conn.execute("ALTER TABLE recurring_expenses ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 1")
+    if "due_date" not in cols:
+        conn.execute("ALTER TABLE recurring_expenses ADD COLUMN due_date TEXT")
+
+
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -119,6 +130,7 @@ def init_db():
         _migrate_accounts_table(conn)
         _migrate_snapshots_fk(conn)
         _migrate_expenses_due_day(conn)
+        _migrate_expenses_one_time(conn)
         _migrate_income_last_pay_date(conn)
 
     conn.executescript("""
@@ -156,14 +168,16 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS recurring_expenses (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            name        TEXT NOT NULL,
-            amount      REAL NOT NULL,
-            category    TEXT,
-            due_day     INTEGER CHECK(due_day IS NULL OR due_day BETWEEN 1 AND 28),
-            is_active   INTEGER NOT NULL DEFAULT 1,
-            created_at  TEXT NOT NULL
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL REFERENCES users(id),
+            name          TEXT NOT NULL,
+            amount        REAL NOT NULL,
+            category      TEXT,
+            due_day       INTEGER CHECK(due_day IS NULL OR due_day BETWEEN 1 AND 28),
+            is_active     INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT NOT NULL,
+            is_recurring  INTEGER NOT NULL DEFAULT 1,
+            due_date      TEXT
         );
 
         CREATE TABLE IF NOT EXISTS recurring_income (

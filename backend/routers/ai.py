@@ -69,8 +69,14 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         parts.append(f"Recurring income:\n{json.dumps(income, indent=2)}\nEstimated total monthly gross income: ${monthly_income:,.2f}")
 
     if expenses:
-        monthly_expenses = sum(e["amount"] for e in expenses)
-        parts.append(f"Recurring expenses:\n{json.dumps(expenses, indent=2)}\nTotal monthly expenses: ${monthly_expenses:,.2f}")
+        recurring = [e for e in expenses if e.get("is_recurring", 1) != 0]
+        one_time = [e for e in expenses if e.get("is_recurring", 1) == 0]
+        monthly_expenses = sum(e["amount"] for e in recurring)
+        if recurring:
+            parts.append(f"Recurring monthly expenses:\n{json.dumps(recurring, indent=2)}\nTotal monthly recurring: ${monthly_expenses:,.2f}")
+        if one_time:
+            one_time_total = sum(e["amount"] for e in one_time)
+            parts.append(f"One-time upcoming expenses (factor these into short-term planning):\n{json.dumps(one_time, indent=2)}\nTotal one-time: ${one_time_total:,.2f}")
 
     return accounts, "\n\n".join(parts)
 
@@ -170,7 +176,7 @@ def _get_income_for_user(user_id: int) -> list[dict]:
 
 def _get_expenses_for_user(user_id: int) -> list[dict]:
     rows = fetchall(
-        "SELECT id, name, amount, category, due_day FROM recurring_expenses WHERE user_id = ? AND is_active = 1",
+        "SELECT id, name, amount, category, due_day, is_recurring, due_date FROM recurring_expenses WHERE user_id = ? AND is_active = 1",
         (user_id,),
     )
     return [dict(r) for r in rows]
@@ -203,13 +209,16 @@ If a source has a last_pay_date, use it with the frequency to calculate upcoming
     expenses_section = ""
     monthly_expenses = 0
     if expenses:
-        monthly_expenses = sum(e["amount"] for e in expenses)
-        expenses_json = json.dumps(expenses, indent=2)
-        expenses_section = f"""
-Recurring monthly expenses (these are non-negotiable obligations — rent, insurance, subscriptions, etc.):
-{expenses_json}
-Total monthly expenses: ${monthly_expenses:,.2f}
-"""
+        recurring = [e for e in expenses if e.get("is_recurring", 1) != 0]
+        one_time = [e for e in expenses if e.get("is_recurring", 1) == 0]
+        monthly_expenses = sum(e["amount"] for e in recurring)
+        parts = []
+        if recurring:
+            parts.append(f"Recurring monthly expenses (non-negotiable obligations — rent, insurance, subscriptions, etc.):\n{json.dumps(recurring, indent=2)}\nTotal monthly recurring: ${monthly_expenses:,.2f}")
+        if one_time:
+            one_time_total = sum(e["amount"] for e in one_time)
+            parts.append(f"One-time upcoming expenses (these need to be budgeted for soon — check due_date if set):\n{json.dumps(one_time, indent=2)}\nTotal one-time: ${one_time_total:,.2f}")
+        expenses_section = "\n".join(parts) + "\n"
 
     disposable_note = ""
     if monthly_income > 0:
