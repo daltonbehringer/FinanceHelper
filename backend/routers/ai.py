@@ -66,7 +66,7 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         monthly_income = sum(
             r["amount"] * MONTHLY_MULTIPLIERS.get(r["frequency"], 1.0) for r in income
         )
-        parts.append(f"Recurring income:\n{json.dumps(income, indent=2)}\nEstimated total monthly gross income: ${monthly_income:,.2f}")
+        parts.append(f"Recurring income:\n{json.dumps(income, indent=2)}\nEstimated total monthly income: ${monthly_income:,.2f}")
 
     if expenses:
         recurring = [e for e in expenses if e.get("is_recurring", 1) != 0]
@@ -122,6 +122,7 @@ Answer rules:
 - For payoff strategy questions, prefer the debt avalanche method (highest interest rate first) unless there's a strong reason to deviate.
 - For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
 - If promo rates are expiring soon, proactively mention it.
+- Estimated monthly income is post-tax.
 
 {financial_context}"""
 
@@ -202,8 +203,9 @@ async def recommend(user_id: int = Depends(get_current_user)):
         income_section = f"""
 Recurring income:
 {income_json}
-Estimated total monthly gross income: ${monthly_income:,.2f}
+Estimated total monthly income: ${monthly_income:,.2f}
 If a source has a last_pay_date, use it with the frequency to calculate upcoming pay dates.
+Estimated monthly income is post-tax.
 """
 
     expenses_section = ""
@@ -226,7 +228,7 @@ If a source has a last_pay_date, use it with the frequency to calculate upcoming
         disposable = monthly_income - monthly_expenses - min_payments
         disposable_note = f"""
 After expenses (${monthly_expenses:,.2f}) and minimum debt payments (${min_payments:,.2f}), estimated monthly disposable income is ${disposable:,.2f}.
-IMPORTANT: Never recommend total extra payments exceeding disposable income. Be realistic about what the user can afford.
+IMPORTANT: Never recommend total extra payments exceeding disposable income. Be realistic about what the user can afford and keep a buffer for typical expenses (groceries, gas, etc.).
 """
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
