@@ -17,7 +17,7 @@ class SnapshotCreate(BaseModel):
     note: Optional[str] = None
 
 
-@router.get("/")
+@router.get("")
 async def list_snapshots(
     account_id: Optional[int] = Query(None),
     user_id: int = Depends(get_current_user),
@@ -47,7 +47,7 @@ async def list_snapshots(
     return [dict(r) for r in rows]
 
 
-@router.post("/")
+@router.post("")
 async def create_snapshot(body: SnapshotCreate, user_id: int = Depends(get_current_user)):
     account = fetchone(
         "SELECT id FROM accounts WHERE id = ? AND user_id = ?",

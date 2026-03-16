@@ -40,7 +40,7 @@ class AccountUpdate(BaseModel):
     promo_end_date: Optional[str] = None
 
 
-@router.get("/")
+@router.get("")
 async def list_accounts(
     include_inactive: int = Query(0),
     user_id: int = Depends(get_current_user),
@@ -65,7 +65,7 @@ async def list_accounts(
     return [dict(r) for r in rows]
 
 
-@router.post("/")
+@router.post("")
 async def create_account(body: AccountCreate, user_id: int = Depends(get_current_user)):
     if body.type not in VALID_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid account type: {body.type}")

@@ -28,7 +28,7 @@ class IncomeUpdate(BaseModel):
     last_pay_date: Optional[str] = None
 
 
-@router.get("/")
+@router.get("")
 async def list_income(
     include_inactive: int = Query(0),
     user_id: int = Depends(get_current_user),
@@ -41,7 +41,7 @@ async def list_income(
     return [dict(r) for r in rows]
 
 
-@router.post("/")
+@router.post("")
 async def create_income(body: IncomeCreate, user_id: int = Depends(get_current_user)):
     if body.frequency not in VALID_FREQUENCIES:
         raise HTTPException(status_code=422, detail=f"Invalid frequency. Must be one of: {', '.join(sorted(VALID_FREQUENCIES))}")

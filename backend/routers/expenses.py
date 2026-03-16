@@ -28,7 +28,7 @@ class ExpenseUpdate(BaseModel):
     due_date: Optional[str] = None
 
 
-@router.get("/")
+@router.get("")
 async def list_expenses(
     include_inactive: int = Query(0),
     user_id: int = Depends(get_current_user),
@@ -41,7 +41,7 @@ async def list_expenses(
     return [dict(r) for r in rows]
 
 
-@router.post("/")
+@router.post("")
 async def create_expense(body: ExpenseCreate, user_id: int = Depends(get_current_user)):
     if body.due_day is not None and not (1 <= body.due_day <= 28):
         raise HTTPException(status_code=422, detail="due_day must be between 1 and 28")

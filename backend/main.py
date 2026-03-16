@@ -51,6 +51,10 @@ if FRONTEND_DIST.exists():
 async def spa_fallback(full_path: str):
     if not FRONTEND_DIST.exists():
         return {"detail": "Frontend not built. Run 'npm run build' in /frontend."}
+    # Don't intercept API or auth routes — let them 404 naturally
+    if full_path.startswith("api/") or full_path.startswith("auth/"):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
     file_path = FRONTEND_DIST / full_path
     if full_path and file_path.is_file():
         return FileResponse(str(file_path))
