@@ -1,0 +1,376 @@
+import { useState } from 'react'
+import { apiFetch } from '../lib/api'
+import { formatMoney, formatDate } from '../lib/utils'
+import { useExpenses } from '../hooks/useExpenses'
+import { useToast } from '../context/ToastContext'
+import Button from '../components/ui/Button'
+import Card, { CardBody } from '../components/ui/Card'
+import Modal from '../components/ui/Modal'
+import Input from '../components/ui/Input'
+import Badge from '../components/ui/Badge'
+import EmptyState from '../components/ui/EmptyState'
+import Spinner from '../components/ui/Spinner'
+
+const INITIAL_FORM = {
+  name: '',
+  amount: '',
+  category: '',
+  isOneTime: false,
+  due_day: '',
+  due_date: '',
+}
+
+function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel }) {
+  const handleChange = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <form
+      onSubmit={e => { e.preventDefault(); onSubmit() }}
+      className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+    >
+      <Input
+        label="Name"
+        value={form.name}
+        onChange={e => handleChange('name', e.target.value)}
+        placeholder="e.g. Netflix, Rent"
+        required
+      />
+      <Input
+        label="Amount"
+        type="number"
+        min="0"
+        step="0.01"
+        value={form.amount}
+        onChange={e => handleChange('amount', e.target.value)}
+        placeholder="0.00"
+        required
+      />
+      <Input
+        label="Category"
+        value={form.category}
+        onChange={e => handleChange('category', e.target.value)}
+        placeholder="e.g. Entertainment, Housing"
+      />
+
+      <div className="flex items-end">
+        <label className="flex items-center gap-2 cursor-pointer select-none pb-2">
+          <div
+            role="switch"
+            aria-checked={form.isOneTime}
+            tabIndex={0}
+            onClick={() => handleChange('isOneTime', !form.isOneTime)}
+            onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); handleChange('isOneTime', !form.isOneTime) } }}
+            className={`
+              relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent
+              transition-colors duration-200 ease-in-out cursor-pointer
+              ${form.isOneTime ? 'bg-accent' : 'bg-gray-200'}
+            `}
+          >
+            <span
+              className={`
+                pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow
+                transform transition duration-200 ease-in-out
+                ${form.isOneTime ? 'translate-x-4' : 'translate-x-0'}
+              `}
+            />
+          </div>
+          <span className="text-sm font-medium text-gray-700">One-time expense</span>
+        </label>
+      </div>
+
+      {form.isOneTime ? (
+        <Input
+          label="Due Date"
+          type="date"
+          value={form.due_date}
+          onChange={e => handleChange('due_date', e.target.value)}
+        />
+      ) : (
+        <Input
+          label="Due Day (1-28)"
+          type="number"
+          min="1"
+          max="28"
+          value={form.due_day}
+          onChange={e => handleChange('due_day', e.target.value)}
+          placeholder="e.g. 15"
+        />
+      )}
+
+      <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
+        <Button type="submit" loading={loading}>
+          {submitLabel}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+export default function Expenses() {
+  const [showInactive, setShowInactive] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editExpense, setEditExpense] = useState(null)
+  const [addForm, setAddForm] = useState(INITIAL_FORM)
+  const [editForm, setEditForm] = useState(INITIAL_FORM)
+  const [submitting, setSubmitting] = useState(false)
+
+  const { expenses, loading, refetch } = useExpenses(showInactive)
+  const { showToast } = useToast()
+
+  // --- Add ---
+  const handleAdd = async () => {
+    setSubmitting(true)
+    try {
+      const body = {
+        name: addForm.name.trim(),
+        amount: parseFloat(addForm.amount),
+        category: addForm.category.trim() || null,
+        is_recurring: !addForm.isOneTime,
+      }
+      if (addForm.isOneTime) {
+        body.due_date = addForm.due_date || null
+      } else {
+        body.due_day = addForm.due_day ? parseInt(addForm.due_day, 10) : null
+      }
+      const resp = await apiFetch('/api/expenses', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (resp && resp.ok) {
+        showToast('Expense added', 'success')
+        refetch()
+        setAddForm(INITIAL_FORM)
+        setShowAddForm(false)
+      } else {
+        showToast('Failed to add expense', 'error')
+      }
+    } catch {
+      showToast('Failed to add expense', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // --- Edit ---
+  const openEdit = (expense) => {
+    const isOneTime = expense.is_recurring === 0 || expense.is_recurring === false
+    setEditForm({
+      name: expense.name,
+      amount: String(expense.amount),
+      category: expense.category || '',
+      isOneTime,
+      due_day: expense.due_day != null ? String(expense.due_day) : '',
+      due_date: expense.due_date || '',
+    })
+    setEditExpense(expense)
+  }
+
+  const handleEdit = async () => {
+    if (!editExpense) return
+    setSubmitting(true)
+    try {
+      const body = {
+        name: editForm.name.trim(),
+        amount: parseFloat(editForm.amount),
+        category: editForm.category.trim() || null,
+        is_recurring: !editForm.isOneTime,
+      }
+      if (editForm.isOneTime) {
+        body.due_date = editForm.due_date || null
+        body.due_day = null
+      } else {
+        body.due_day = editForm.due_day ? parseInt(editForm.due_day, 10) : null
+        body.due_date = null
+      }
+      const resp = await apiFetch(`/api/expenses/${editExpense.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      })
+      if (resp && resp.ok) {
+        showToast('Expense updated', 'success')
+        refetch()
+        setEditExpense(null)
+      } else {
+        showToast('Failed to update expense', 'error')
+      }
+    } catch {
+      showToast('Failed to update expense', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // --- Deactivate ---
+  const handleDeactivate = async (expense) => {
+    if (!window.confirm(`Deactivate "${expense.name}"?`)) return
+    try {
+      const resp = await apiFetch(`/api/expenses/${expense.id}/deactivate`, {
+        method: 'POST',
+      })
+      if (resp && resp.ok) {
+        showToast('Expense deactivated', 'success')
+        refetch()
+      } else {
+        showToast('Failed to deactivate expense', 'error')
+      }
+    } catch {
+      showToast('Failed to deactivate expense', 'error')
+    }
+  }
+
+  // --- Render ---
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">Expenses</h1>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={e => setShowInactive(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent/20"
+            />
+            <span className="text-sm text-gray-600">Show inactive</span>
+          </label>
+          <Button onClick={() => setShowAddForm(prev => !prev)}>
+            {showAddForm ? 'Cancel' : 'Add Expense'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Add Form (collapsible) */}
+      {showAddForm && (
+        <Card>
+          <CardBody>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">New Expense</h2>
+            <ExpenseForm
+              form={addForm}
+              setForm={setAddForm}
+              onSubmit={handleAdd}
+              loading={submitting}
+              submitLabel="Add Expense"
+            />
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Spinner size="lg" className="text-accent" />
+        </div>
+      ) : expenses.length === 0 ? (
+        <Card>
+          <CardBody>
+            <EmptyState
+              icon={
+                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+                </svg>
+              }
+              title="No expenses yet"
+              description="Add your first expense to start tracking your spending."
+              action="Add Expense"
+              onAction={() => setShowAddForm(true)}
+            />
+          </CardBody>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="text-left px-5 py-3 font-medium text-gray-500">Name</th>
+                  <th className="text-right px-5 py-3 font-medium text-gray-500">Amount</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500">Type</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500">Category</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500">Due</th>
+                  <th className="text-right px-5 py-3 font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {expenses.map(exp => {
+                  const inactive = exp.is_active === 0 || exp.is_active === false
+                  const isRecurring = exp.is_recurring === 1 || exp.is_recurring === true
+
+                  let dueDisplay = '\u2014'
+                  if (isRecurring) {
+                    dueDisplay = exp.due_day ? `Day ${exp.due_day}` : '\u2014'
+                  } else {
+                    dueDisplay = exp.due_date ? formatDate(exp.due_date) : '\u2014'
+                  }
+
+                  return (
+                    <tr
+                      key={exp.id}
+                      className={`hover:bg-gray-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
+                    >
+                      <td className="px-5 py-3 font-medium text-gray-900">{exp.name}</td>
+                      <td className="px-5 py-3 text-right text-gray-700 tabular-nums">
+                        {formatMoney(exp.amount)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge color={isRecurring ? 'green' : 'blue'}>
+                          {isRecurring ? 'Recurring' : 'One-time'}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3">
+                        {exp.category ? (
+                          <Badge color="gray">{exp.category}</Badge>
+                        ) : (
+                          <span className="text-gray-400">{'\u2014'}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600">{dueDisplay}</td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(exp)}
+                          >
+                            Edit
+                          </Button>
+                          {!inactive && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeactivate(exp)}
+                              className="text-danger hover:text-danger-hover"
+                            >
+                              Deactivate
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Edit Modal */}
+      <Modal
+        isOpen={editExpense !== null}
+        onClose={() => setEditExpense(null)}
+        title="Edit Expense"
+      >
+        <ExpenseForm
+          form={editForm}
+          setForm={setEditForm}
+          onSubmit={handleEdit}
+          loading={submitting}
+          submitLabel="Save Changes"
+        />
+      </Modal>
+    </div>
+  )
+}

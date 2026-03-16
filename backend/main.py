@@ -17,7 +17,7 @@ from backend.routers.expenses import router as expenses_router
 from backend.routers.income import router as income_router
 from backend.routers.snapshots import router as snapshots_router
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -43,9 +43,15 @@ app.include_router(ai_router)
 app.include_router(expenses_router)
 app.include_router(income_router)
 
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 
-@app.get("/")
-async def root():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    if not FRONTEND_DIST.exists():
+        return {"detail": "Frontend not built. Run 'npm run build' in /frontend."}
+    file_path = FRONTEND_DIST / full_path
+    if full_path and file_path.is_file():
+        return FileResponse(str(file_path))
+    return FileResponse(str(FRONTEND_DIST / "index.html"))

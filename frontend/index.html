@@ -1,64 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Finance Tracker</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-</head>
-<body>
-    <header>
-        <h1>Finance Tracker</h1>
-        <div class="header-right">
-            <span id="user-email"></span>
-            <button onclick="logout()">Logout</button>
-        </div>
-    </header>
-
-    <nav>
-        <a onclick="switchTab('dashboard')" data-tab="dashboard" class="active">Dashboard</a>
-        <a onclick="switchTab('accounts')" data-tab="accounts">Accounts</a>
-        <a onclick="switchTab('expenses')" data-tab="expenses">Expenses</a>
-        <a onclick="switchTab('income')" data-tab="income">Income</a>
-        <a onclick="switchTab('update')" data-tab="update">Ask Advisor</a>
-        <a onclick="switchTab('history')" data-tab="history">History</a>
-    </nav>
-
-    <main id="app-main">
-        <!-- Page sections are loaded here from /pages/*.html -->
-    </main>
-
-    <!-- Modal container loaded from modals.html -->
-    <div id="modals-container"></div>
-
-    <!-- JS: utilities first, then feature modules, then app init last -->
-    <script src="/static/js/utils.js"></script>
-    <script src="/static/js/api.js"></script>
-    <script src="/static/js/dashboard.js"></script>
-    <script src="/static/js/accounts.js"></script>
-    <script src="/static/js/expenses.js"></script>
-    <script src="/static/js/income.js"></script>
-    <script src="/static/js/update.js"></script>
-    <script src="/static/js/history.js"></script>
-    <script src="/static/js/app.js"></script>
-    <script>
-        // Load HTML page fragments into the shell, then init
-        (async function loadPages() {
-            const main = document.getElementById('app-main');
-            const modalsContainer = document.getElementById('modals-container');
-            const pages = ['dashboard', 'accounts', 'expenses', 'income', 'update', 'history'];
-
-            const cacheBust = `?v=${Date.now()}`;
-            const [modalsHtml, ...fragments] = await Promise.all([
-                fetch(`/static/pages/modals.html${cacheBust}`).then(r => r.text()),
-                ...pages.map(p => fetch(`/static/pages/${p}.html${cacheBust}`).then(r => r.text())),
-            ]);
-            main.innerHTML = fragments.join('\n');
-            modalsContainer.innerHTML = modalsHtml;
-
-            // All DOM elements now exist — safe to init
-            checkAuth();
-        })();
-    </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>frontend</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
