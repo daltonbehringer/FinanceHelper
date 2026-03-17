@@ -134,7 +134,7 @@ Answer rules:
 - Be specific: reference actual account names, balances, rates, and dates from the data.
 - For questions about totals (net worth, total debt, total assets), use the PRE-COMPUTED TOTALS provided — do NOT attempt to add up account balances yourself.
 - Keep answers concise but complete. Use plain text, no markdown.
-- For payoff strategy questions, prefer the debt avalanche method (highest interest rate first) unless there's a strong reason to deviate.
+- For payoff strategy questions, prefer the debt avalanche method (highest interest rate first) unless there's a strong reason to deviate. Always include concrete action items with specific dollar amounts (e.g. "Pay $350 toward Account X this month"). Never give vague advice like "pay extra" without a number.
 - For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
 - If promo rates are expiring soon, proactively mention it.
 - Estimated monthly income is post-tax.
@@ -248,11 +248,22 @@ IMPORTANT: The tracked expenses above do NOT include variable essentials like gr
 """
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
-Recommend the optimal debt payoff strategy. Be concise — use short bullet points, not lengthy paragraphs.
-Name each account, state why it's prioritized, and quantify the impact briefly.
-Use the debt avalanche method (highest interest rate first) unless there is a strong reason to deviate.
-Keep the entire response under 300 words. Do NOT use markdown formatting (no **, no ##, no *). Use plain text only.
 Today's date: {today}.
+
+Your response MUST follow this exact structure:
+
+1) PRIORITY ORDER — List each debt account in recommended payoff order. For each, state the account name, current balance, interest rate, and why it's ranked here.
+
+2) THIS MONTH'S ACTION PLAN — Specific dollar amounts to pay toward each account this month. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). Include minimum payments on all accounts plus any extra payments on the priority target. The total must not exceed the safe payment amount.
+
+3) NEXT STEPS — 1-2 short actions the user should take after completing this month's payments (e.g. "Once Account X is paid off, redirect that $200/mo to Account Y").
+
+Formatting rules:
+- Be concise — use short bullet points, not lengthy paragraphs.
+- Name each account, state why it's prioritized, and quantify the impact briefly.
+- Use the debt avalanche method (highest interest rate first) unless there is a strong reason to deviate.
+- Keep the entire response under 300 words. Do NOT use markdown formatting (no **, no ##, no *). Use plain text only.
+- Every recommendation must include specific dollar amounts — never say "pay extra" without a number.
 
 Account type guidance:
 - Investment/retirement accounts ({investment_types_list}) are assets — do NOT recommend paying them off or withdrawing from them.
@@ -264,7 +275,7 @@ Current accounts:
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model=MODEL,
-        max_tokens=600,
+        max_tokens=800,
         system=system_prompt,
         messages=[{"role": "user", "content": "What should I prioritize this month?"}],
     )
