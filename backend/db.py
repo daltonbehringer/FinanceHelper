@@ -181,6 +181,13 @@ def init_db():
             due_date      TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL UNIQUE REFERENCES users(id),
+            min_checking    REAL NOT NULL DEFAULT 0,
+            updated_at      TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS recurring_income (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id         INTEGER NOT NULL REFERENCES users(id),

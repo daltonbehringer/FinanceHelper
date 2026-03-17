@@ -8,6 +8,7 @@ import Expenses from './pages/Expenses'
 import Income from './pages/Income'
 import Advisor from './pages/Advisor'
 import History from './pages/History'
+import Settings from './pages/Settings'
 
 // Extract session token from URL after OAuth redirect and store in cookie
 const params = new URLSearchParams(window.location.search)
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="/income" element={<Income />} />
               <Route path="/advisor" element={<Advisor />} />
               <Route path="/history" element={<History />} />
+              <Route path="/settings" element={<Settings />} />
             </Routes>
           </Layout>
         </ToastProvider>

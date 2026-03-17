@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
-from backend.db import fetchall
+from backend.db import fetchall, fetchone
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -54,11 +54,17 @@ def _strip_markdown_fencing(text: str) -> str:
     return text.strip()
 
 
+def _get_user_settings(user_id: int) -> dict:
+    row = fetchone("SELECT * FROM user_settings WHERE user_id = ?", (user_id,))
+    return dict(row) if row else {"min_checking": 0}
+
+
 def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
     """Build full financial context string. Returns (accounts, context_str)."""
     accounts = _get_accounts_for_user(user_id)
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)
+    settings = _get_user_settings(user_id)
 
     # Pre-compute aggregates so the LLM doesn't have to do arithmetic
     debt_types = {"credit_card", "loan", "mortgage", "line_of_credit"}
@@ -68,6 +74,8 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
     total_assets = sum(a.get("current_balance") or 0 for a in asset_accounts)
     net_worth = total_assets - total_debt
 
+    min_checking = settings.get("min_checking") or 0
+
     parts = [
         f"Current accounts:\n{json.dumps(accounts, indent=2)}",
         f"PRE-COMPUTED TOTALS (use these exact numbers, do NOT recalculate):\n"
@@ -75,6 +83,17 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         f"  Total assets: ${total_assets:,.2f}\n"
         f"  Net worth (assets minus debt): ${net_worth:,.2f}",
     ]
+
+    if min_checking > 0:
+        parts.append(
+            f"CHECKING ACCOUNT FLOOR: ${min_checking:,.2f}\n"
+            f"The user has set a minimum checking balance of ${min_checking:,.2f}. "
+            f"This is a hard floor — NEVER recommend any payment or action that would cause "
+            f"the user's checking account balance to drop below this amount. This reserve "
+            f"covers essentials like groceries, gas, medical, and unexpected expenses. "
+            f"When calculating how much the user can afford to pay toward debt, subtract "
+            f"this floor from the checking balance first."
+        )
 
     if income:
         monthly_income = sum(
@@ -138,7 +157,7 @@ Answer rules:
 - For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
 - If promo rates are expiring soon, proactively mention it.
 - Estimated monthly income is post-tax.
-- CRITICAL SAFETY RULE: Never suggest the user put all or most of their available cash toward debt. They must always retain enough for essential living expenses (groceries, transportation, utilities, medical, etc.). When recommending payment amounts, reserve at least 20% of monthly income for variable essentials not captured in their tracked expenses. If the user asks about making a large lump-sum payment, warn them to keep an emergency buffer and budget for essentials before committing excess funds to debt.
+- CRITICAL SAFETY RULE: Never suggest the user put all or most of their available cash toward debt. If the user has set a CHECKING ACCOUNT FLOOR (see financial context below), that is a hard limit — never recommend any action that would drop their checking balance below that amount. If no floor is set, reserve at least 20% of monthly income for variable essentials (groceries, transportation, utilities, medical). If the user asks about making a large lump-sum payment, warn them to keep their checking balance above the floor and budget for essentials before committing excess funds to debt.
 
 {financial_context}"""
 
@@ -252,6 +271,8 @@ async def recommend(user_id: int = Depends(get_current_user)):
     accounts = _get_accounts_for_user(user_id)
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)
+    settings = _get_user_settings(user_id)
+    min_checking = settings.get("min_checking") or 0
     accounts_json = json.dumps(accounts, indent=2)
     today = date.today().isoformat()
 
@@ -312,6 +333,14 @@ Estimated monthly income is post-tax.
     if monthly_income > 0:
         min_payments = sum(a.get("minimum_payment") or 0 for a in accounts if a["type"] not in INVESTMENT_TYPES)
         disposable = monthly_income - monthly_expenses - min_payments
+        # Use user's checking floor if set, otherwise fall back to 20% of income
+        reserve = min_checking if min_checking > 0 else monthly_income * 0.2
+        reserve_label = (
+            f"Checking account floor (user-configured): ${reserve:,.2f}"
+            if min_checking > 0
+            else f"20% essential reserve (groceries, gas, medical, etc.): ${reserve:,.2f}"
+        )
+        max_safe = max(0, disposable - reserve)
         disposable_note = f"""
 BUDGET BREAKDOWN (use these exact numbers):
   Monthly income: ${monthly_income:,.2f}
@@ -319,10 +348,10 @@ BUDGET BREAKDOWN (use these exact numbers):
   Minimum debt payments: ${min_payments:,.2f}
   Subtotal obligations: ${monthly_expenses + min_payments:,.2f}
   Remaining after obligations: ${disposable:,.2f}
-  20% essential reserve (groceries, gas, medical, etc.): ${monthly_income * 0.2:,.2f}
-  MAXIMUM safe amount for extra debt payments: ${max(0, disposable - monthly_income * 0.2):,.2f}
+  {reserve_label}
+  MAXIMUM safe amount for extra debt payments: ${max_safe:,.2f}
 
-CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it. Always remind the user to maintain an emergency buffer for untracked variable costs.
+CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it.{f" The user has set a checking account floor of ${min_checking:,.2f} — never recommend actions that would drop their checking balance below this amount." if min_checking > 0 else " Always remind the user to maintain an emergency buffer for untracked variable costs."}
 """
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
