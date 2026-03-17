@@ -30,14 +30,14 @@ function AccountCard({ account }) {
   return (
     <Card>
       <CardBody>
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">{account.name}</h3>
-            <Badge color={typeBadgeColor} className="mt-1">
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{account.name}</h3>
+            <Badge color={typeBadgeColor} className="flex-shrink-0">
               {formatType(account.type)}
             </Badge>
           </div>
-          <p className={`text-lg font-bold ${debt ? 'text-red-600' : 'text-green-600'}`}>
+          <p className={`text-lg font-bold flex-shrink-0 ml-2 ${debt ? 'text-red-600' : 'text-green-600'}`}>
             {formatMoney(balance)}
           </p>
         </div>

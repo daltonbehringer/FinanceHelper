@@ -1,4 +1,5 @@
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +7,18 @@ from pydantic import BaseModel
 
 from backend.auth import get_current_user
 from backend.db import execute, fetchall, fetchone
+
+DEBT_TYPES = {"credit_card", "loan", "mortgage", "line_of_credit"}
+
+
+def _advance_month(d: date) -> date:
+    """Advance a date by one month, clamping to last day if needed."""
+    if d.month == 12:
+        y, m = d.year + 1, 1
+    else:
+        y, m = d.year, d.month + 1
+    last_day = calendar.monthrange(y, m)[1]
+    return date(y, m, min(d.day, last_day))
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
@@ -69,6 +82,27 @@ async def create_snapshot(body: SnapshotCreate, user_id: int = Depends(get_curre
         "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
         (body.balance, body.account_id, user_id),
     )
+
+    # Auto-advance due_date by 1 month for debt accounts when a payment is made
+    if body.payment_made:
+        acct = fetchone(
+            "SELECT type, due_date FROM accounts WHERE id = ? AND user_id = ?",
+            (body.account_id, user_id),
+        )
+        if acct and acct["type"] in DEBT_TYPES and acct["due_date"]:
+            try:
+                old_due = date.fromisoformat(acct["due_date"])
+                today = date.today()
+                new_due = _advance_month(old_due)
+                # Keep advancing if due date is still in the past
+                while new_due <= today:
+                    new_due = _advance_month(new_due)
+                execute(
+                    "UPDATE accounts SET due_date = ? WHERE id = ? AND user_id = ?",
+                    (new_due.isoformat(), body.account_id, user_id),
+                )
+            except (ValueError, TypeError):
+                pass  # Skip if due_date is malformed
 
     row = fetchone(
         "SELECT s.*, a.name AS account_name FROM account_snapshots s JOIN accounts a ON s.account_id = a.id WHERE s.user_id = ? ORDER BY s.id DESC LIMIT 1",

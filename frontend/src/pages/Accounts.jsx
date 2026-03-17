@@ -191,7 +191,7 @@ function getSortValue(item, key) {
     case 'type': return (item.type || '').toLowerCase()
     case 'balance': return item.current_balance ?? item.balance ?? 0
     case 'minimum_payment': return item.minimum_payment ?? 0
-    case 'due_date': return item.due_date || ''
+    case 'due_date': return item.due_date || '\uffff'
     case 'interest_rate': return item.interest_rate ?? 0
     case 'promo': return item.promo_rate ?? 0
     default: return ''
@@ -206,7 +206,7 @@ export default function Accounts() {
   const [editForm, setEditForm] = useState(EMPTY_FORM)
   const [addLoading, setAddLoading] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
-  const [sortCol, setSortCol] = useState('name')
+  const [sortCol, setSortCol] = useState('due_date')
   const [sortDir, setSortDir] = useState('asc')
 
   const { accounts, loading, refetch } = useAccounts(showInactive)
@@ -397,6 +397,26 @@ export default function Accounts() {
         <Card className="overflow-hidden">
           {/* Mobile compact list */}
           <div className="md:hidden">
+            <div className="px-4 py-2 border-b border-gray-100">
+              <select
+                value={`${sortCol}:${sortDir}`}
+                onChange={e => {
+                  const [col, dir] = e.target.value.split(':')
+                  setSortCol(col)
+                  setSortDir(dir)
+                }}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              >
+                <option value="due_date:asc">Sort: Due Date (soonest)</option>
+                <option value="due_date:desc">Sort: Due Date (latest)</option>
+                <option value="name:asc">Sort: Name (A-Z)</option>
+                <option value="name:desc">Sort: Name (Z-A)</option>
+                <option value="balance:desc">Sort: Balance (high-low)</option>
+                <option value="balance:asc">Sort: Balance (low-high)</option>
+                <option value="type:asc">Sort: Type</option>
+                <option value="interest_rate:desc">Sort: Rate (highest)</option>
+              </select>
+            </div>
             <MobileAccountList
               accounts={sorted}
               onEdit={openEdit}

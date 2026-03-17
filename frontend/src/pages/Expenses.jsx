@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
-import { formatMoney, formatDate } from '../lib/utils'
+import { formatMoney, formatDate, nextDueDate } from '../lib/utils'
 import { useExpenses } from '../hooks/useExpenses'
 import { useToast } from '../context/ToastContext'
 import Button from '../components/ui/Button'
@@ -123,7 +123,7 @@ function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
 
         let dueDisplay = null
         if (isRecurring && exp.due_day) {
-          dueDisplay = `Due: Day ${exp.due_day}`
+          dueDisplay = `Due: ${nextDueDate(exp.due_day)}`
         } else if (!isRecurring && exp.due_date) {
           dueDisplay = `Due: ${formatDate(exp.due_date)}`
         }
@@ -164,8 +164,8 @@ function getSortValue(item, key) {
     case 'type': return isRecurring ? 'recurring' : 'one-time'
     case 'amount': return item.amount ?? 0
     case 'due': {
-      if (isRecurring) return item.due_day ?? 99
-      return item.due_date || 'zzzz'
+      if (isRecurring) return item.due_day ?? 9999
+      return item.due_date || '\uffff'
     }
     case 'category': return (item.category || '').toLowerCase()
     default: return ''
@@ -179,7 +179,7 @@ export default function Expenses() {
   const [addForm, setAddForm] = useState(INITIAL_FORM)
   const [editForm, setEditForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
-  const [sortCol, setSortCol] = useState('name')
+  const [sortCol, setSortCol] = useState('due')
   const [sortDir, setSortDir] = useState('asc')
 
   const { expenses, loading, refetch } = useExpenses(showInactive)
@@ -366,6 +366,26 @@ export default function Expenses() {
         <Card className="overflow-hidden">
           {/* Mobile compact list */}
           <div className="md:hidden">
+            <div className="px-4 py-2 border-b border-gray-100">
+              <select
+                value={`${sortCol}:${sortDir}`}
+                onChange={e => {
+                  const [col, dir] = e.target.value.split(':')
+                  setSortCol(col)
+                  setSortDir(dir)
+                }}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              >
+                <option value="due:asc">Sort: Due Date (soonest)</option>
+                <option value="due:desc">Sort: Due Date (latest)</option>
+                <option value="name:asc">Sort: Name (A-Z)</option>
+                <option value="name:desc">Sort: Name (Z-A)</option>
+                <option value="amount:desc">Sort: Amount (high-low)</option>
+                <option value="amount:asc">Sort: Amount (low-high)</option>
+                <option value="type:asc">Sort: Type</option>
+                <option value="category:asc">Sort: Category</option>
+              </select>
+            </div>
             <MobileExpenseList
               expenses={sorted}
               onEdit={openEdit}
@@ -393,7 +413,7 @@ export default function Expenses() {
 
                   let dueDisplay = '\u2014'
                   if (isRecurring) {
-                    dueDisplay = exp.due_day ? `Day ${exp.due_day}` : '\u2014'
+                    dueDisplay = exp.due_day ? nextDueDate(exp.due_day) : '\u2014'
                   } else {
                     dueDisplay = exp.due_date ? formatDate(exp.due_date) : '\u2014'
                   }

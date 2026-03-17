@@ -74,6 +74,21 @@ export function nextPayday(lastPayDate, frequency) {
   return formatDate(d.toISOString().split('T')[0])
 }
 
+export function nextDueDate(dueDay) {
+  if (dueDay == null) return '\u2014'
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  // Try this month first
+  let candidate = new Date(y, m, dueDay)
+  if (candidate < today) {
+    // Already passed this month, use next month
+    candidate = new Date(y, m + 1, dueDay)
+  }
+  return formatDate(candidate.toISOString().split('T')[0])
+}
+
 export function formatRecommendation(text) {
   if (!text) return []
   return text.split('\n').map((line, i) => {
