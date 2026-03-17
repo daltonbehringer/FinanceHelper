@@ -237,8 +237,8 @@ export default function Dashboard() {
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 break-words">AI Budget</p>
-              <p className="text-sm font-semibold text-accent break-words leading-snug">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">AI Budget</p>
+              <p className="text-sm font-semibold text-accent leading-snug">
                 {recLoading ? 'Generating...' : 'Get Recommendation'}
               </p>
             </div>
