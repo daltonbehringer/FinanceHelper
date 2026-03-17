@@ -20,6 +20,20 @@ export function formatDate(dateStr) {
   return `${months[month - 1]} ${String(day).padStart(2, '0')}, ${year}`
 }
 
+export function formatDateTime(dateStr) {
+  if (!dateStr) return '\u2014'
+  const d = new Date(dateStr)
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const month = months[d.getUTCMonth()]
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const year = d.getUTCFullYear()
+  let hours = d.getUTCHours()
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0')
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  hours = hours % 12 || 12
+  return `${month} ${day}, ${year} at ${hours}:${minutes} ${ampm}`
+}
+
 export function formatType(type) {
   if (type === '401k') return '401(k)'
   if (type === 'ira') return 'IRA'

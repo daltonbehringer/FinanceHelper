@@ -232,13 +232,13 @@ export default function Dashboard() {
           }
         />
         <Card
-          className="p-4 sm:p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+          className="ai-glow p-4 sm:p-5 cursor-pointer hover:bg-gray-50 transition-colors"
           onClick={recLoading ? undefined : handleGetRecommendation}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 truncate">AI Budget</p>
-              <p className="text-sm font-semibold text-accent truncate">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 break-words">AI Budget</p>
+              <p className="text-sm font-semibold text-accent break-words leading-snug">
                 {recLoading ? 'Generating...' : 'Get Recommendation'}
               </p>
             </div>
