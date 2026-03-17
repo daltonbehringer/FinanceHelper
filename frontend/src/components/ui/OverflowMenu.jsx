@@ -1,31 +1,55 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 
 export default function OverflowMenu({ items }) {
   const [open, setOpen] = useState(false)
-  const [openUpward, setOpenUpward] = useState(false)
-  const ref = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0, direction: 'down' })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    const openUp = spaceBelow < 120
+    setPos({
+      top: openUp ? rect.top : rect.bottom + 4,
+      left: rect.right - 144, // 144px = w-36
+      direction: openUp ? 'up' : 'down',
+    })
+  }, [])
+
+  function handleOpen() {
+    if (!open) updatePosition()
+    setOpen(v => !v)
+  }
 
   useEffect(() => {
     if (!open) return
     function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+      if (buttonRef.current?.contains(e.target)) return
+      if (menuRef.current?.contains(e.target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  function handleOpen() {
-    if (!open && ref.current) {
-      const rect = ref.current.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - rect.bottom
-      setOpenUpward(spaceBelow < 120)
+  // Recalculate on scroll/resize while open
+  useEffect(() => {
+    if (!open) return
+    function handleReposition() { updatePosition() }
+    window.addEventListener('scroll', handleReposition, true)
+    window.addEventListener('resize', handleReposition)
+    return () => {
+      window.removeEventListener('scroll', handleReposition, true)
+      window.removeEventListener('resize', handleReposition)
     }
-    setOpen(v => !v)
-  }
+  }, [open, updatePosition])
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={buttonRef}
         onClick={handleOpen}
         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
       >
@@ -35,9 +59,15 @@ export default function OverflowMenu({ items }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 z-20 w-36 rounded-lg bg-white shadow-lg ring-1 ring-black/5 py-1 ${
-          openUpward ? 'bottom-full mb-1' : 'mt-1'
-        }`}>
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-36 rounded-lg bg-white shadow-lg ring-1 ring-black/5 py-1"
+          style={{
+            top: pos.direction === 'up' ? undefined : pos.top,
+            bottom: pos.direction === 'up' ? window.innerHeight - pos.top + 4 : undefined,
+            left: Math.max(8, pos.left),
+          }}
+        >
           {items.map((item, i) => (
             <button
               key={i}
@@ -53,6 +83,6 @@ export default function OverflowMenu({ items }) {
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }
