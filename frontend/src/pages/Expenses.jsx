@@ -10,6 +10,7 @@ import Input from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
+import OverflowMenu from '../components/ui/OverflowMenu'
 
 const INITIAL_FORM = {
   name: '',
@@ -108,6 +109,43 @@ function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel }) {
   )
 }
 
+function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
+  return (
+    <div className="divide-y divide-gray-100">
+      {expenses.map(exp => {
+        const inactive = exp.is_active === 0 || exp.is_active === false
+        const isRecurring = exp.is_recurring === 1 || exp.is_recurring === true
+        const menuItems = [{ label: 'Edit', onClick: () => onEdit(exp) }]
+        if (!inactive) {
+          menuItems.push({ label: 'Deactivate', onClick: () => onDeactivate(exp), danger: true })
+        }
+
+        return (
+          <div
+            key={exp.id}
+            className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900 truncate">{exp.name}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <Badge color={isRecurring ? 'green' : 'blue'}>
+                  {isRecurring ? 'Recurring' : 'One-time'}
+                </Badge>
+                <span className="text-sm font-semibold text-gray-700">
+                  {formatMoney(exp.amount)}
+                </span>
+              </div>
+            </div>
+            <OverflowMenu items={menuItems} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function Expenses() {
   const [showInactive, setShowInactive] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -119,7 +157,6 @@ export default function Expenses() {
   const { expenses, loading, refetch } = useExpenses(showInactive)
   const { showToast } = useToast()
 
-  // --- Add ---
   const handleAdd = async () => {
     setSubmitting(true)
     try {
@@ -153,7 +190,6 @@ export default function Expenses() {
     }
   }
 
-  // --- Edit ---
   const openEdit = (expense) => {
     const isOneTime = expense.is_recurring === 0 || expense.is_recurring === false
     setEditForm({
@@ -202,7 +238,6 @@ export default function Expenses() {
     }
   }
 
-  // --- Deactivate ---
   const handleDeactivate = async (expense) => {
     if (!window.confirm(`Deactivate "${expense.name}"?`)) return
     try {
@@ -220,7 +255,6 @@ export default function Expenses() {
     }
   }
 
-  // --- Render ---
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -242,7 +276,7 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* Add Form (collapsible) */}
+      {/* Add Form */}
       {showAddForm && (
         <Card>
           <CardBody>
@@ -258,7 +292,7 @@ export default function Expenses() {
         </Card>
       )}
 
-      {/* Table */}
+      {/* Table / List */}
       {loading ? (
         <div className="flex justify-center py-12">
           <Spinner size="lg" className="text-accent" />
@@ -281,16 +315,26 @@ export default function Expenses() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          {/* Mobile compact list */}
+          <div className="md:hidden">
+            <MobileExpenseList
+              expenses={expenses}
+              onEdit={openEdit}
+              onDeactivate={handleDeactivate}
+            />
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left px-5 py-3 font-medium text-gray-500">Name</th>
-                  <th className="text-right px-5 py-3 font-medium text-gray-500">Amount</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500">Type</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500">Category</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500">Due</th>
-                  <th className="text-right px-5 py-3 font-medium text-gray-500">Actions</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[25%]">Name</th>
+                  <th className="text-right px-5 py-3 font-medium text-gray-500 w-[15%]">Amount</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[15%]">Type</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[20%] hidden lg:table-cell">Category</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[15%] hidden lg:table-cell">Due</th>
+                  <th className="text-right px-5 py-3 font-medium text-gray-500 w-[10%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -310,8 +354,8 @@ export default function Expenses() {
                       key={exp.id}
                       className={`hover:bg-gray-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
                     >
-                      <td className="px-5 py-3 font-medium text-gray-900">{exp.name}</td>
-                      <td className="px-5 py-3 text-right text-gray-700 tabular-nums">
+                      <td className="px-5 py-3 font-medium text-gray-900 truncate">{exp.name}</td>
+                      <td className="px-5 py-3 text-right text-gray-700 tabular-nums truncate">
                         {formatMoney(exp.amount)}
                       </td>
                       <td className="px-5 py-3">
@@ -319,34 +363,21 @@ export default function Expenses() {
                           {isRecurring ? 'Recurring' : 'One-time'}
                         </Badge>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 hidden lg:table-cell">
                         {exp.category ? (
                           <Badge color="gray">{exp.category}</Badge>
                         ) : (
                           <span className="text-gray-400">{'\u2014'}</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-gray-600">{dueDisplay}</td>
+                      <td className="px-5 py-3 text-gray-600 truncate hidden lg:table-cell">{dueDisplay}</td>
                       <td className="px-5 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(exp)}
-                          >
-                            Edit
-                          </Button>
-                          {!inactive && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeactivate(exp)}
-                              className="text-danger hover:text-danger-hover"
-                            >
-                              Deactivate
-                            </Button>
-                          )}
-                        </div>
+                        <OverflowMenu
+                          items={[
+                            { label: 'Edit', onClick: () => openEdit(exp) },
+                            ...(!inactive ? [{ label: 'Deactivate', onClick: () => handleDeactivate(exp), danger: true }] : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   )

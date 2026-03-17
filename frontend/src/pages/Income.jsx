@@ -11,6 +11,7 @@ import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
+import OverflowMenu from '../components/ui/OverflowMenu'
 
 const EMPTY_FORM = {
   name: '',
@@ -100,6 +101,46 @@ function IncomeForm({ form, setForm, onSubmit, onCancel, loading, submitLabel })
         </Button>
       </div>
     </form>
+  )
+}
+
+function MobileIncomeList({ income, onEdit, onDeactivate, onMarkPaid, markPaidLoading }) {
+  return (
+    <div className="divide-y divide-gray-100">
+      {income.map(item => {
+        const inactive = item.is_active === 0 || item.is_active === false
+        const menuItems = [{ label: 'Edit', onClick: () => onEdit(item) }]
+        if (item.last_pay_date && !inactive) {
+          menuItems.push({ label: 'Mark Paid', onClick: () => onMarkPaid(item) })
+        }
+        if (!inactive) {
+          menuItems.push({ label: 'Deactivate', onClick: () => onDeactivate(item), danger: true })
+        }
+
+        return (
+          <div
+            key={item.id}
+            className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900 truncate">{item.name}</span>
+                {inactive && <Badge color="gray">Inactive</Badge>}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <Badge color={freqBadgeColor(item.frequency)}>
+                  {formatFrequency(item.frequency)}
+                </Badge>
+                <span className="text-sm font-semibold text-green-600">
+                  {formatMoney(item.amount)}
+                </span>
+              </div>
+            </div>
+            <OverflowMenu items={menuItems} />
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -270,7 +311,7 @@ export default function Income() {
         </Card>
       )}
 
-      {/* Income table */}
+      {/* Income list/table */}
       {income.length === 0 ? (
         <Card>
           <EmptyState
@@ -290,84 +331,72 @@ export default function Income() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          {/* Mobile compact list */}
+          <div className="md:hidden">
+            <MobileIncomeList
+              income={income}
+              onEdit={openEdit}
+              onDeactivate={handleDeactivate}
+              onMarkPaid={handleMarkPaid}
+              markPaidLoading={markPaidLoading}
+            />
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Amount</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Frequency</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Monthly Equiv</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Pay Day</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Last Paid</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Next Payday</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[18%]">Name</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Amount</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[12%]">Frequency</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Monthly Equiv</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Last Paid</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Next Payday</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {income.map(item => {
                   const inactive = item.is_active === 0 || item.is_active === false
+                  const menuItems = [{ label: 'Edit', onClick: () => openEdit(item) }]
+                  if (item.last_pay_date && !inactive) {
+                    menuItems.push({ label: 'Mark Paid', onClick: () => handleMarkPaid(item) })
+                  }
+                  if (!inactive) {
+                    menuItems.push({ label: 'Deactivate', onClick: () => handleDeactivate(item), danger: true })
+                  }
+
                   return (
                     <tr
                       key={item.id}
                       className={`hover:bg-gray-50/50 transition-colors ${inactive ? 'opacity-50' : ''}`}
                     >
-                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                      <td className="px-4 py-3 font-medium text-gray-900 truncate">
                         {item.name}
                         {inactive && (
                           <Badge color="gray" className="ml-2">Inactive</Badge>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 truncate">
                         {formatMoney(item.amount)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3">
                         <Badge color={freqBadgeColor(item.frequency)}>
                           {formatFrequency(item.frequency)}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-green-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right font-medium text-green-600 truncate">
                         {formatMoney(monthlyEquiv(item.amount, item.frequency))}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
-                        {item.income_day || '\u2014'}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-gray-600 truncate hidden lg:table-cell">
                         {formatDate(item.last_pay_date)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap font-bold text-green-600">
+                      <td className="px-4 py-3 font-bold text-green-600 truncate hidden lg:table-cell">
                         {nextPayday(item.last_pay_date, item.frequency)}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          {item.last_pay_date && !inactive && (
-                            <Button
-                              variant="success"
-                              size="sm"
-                              loading={markPaidLoading === item.id}
-                              onClick={() => handleMarkPaid(item)}
-                            >
-                              Mark Paid
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(item)}
-                          >
-                            Edit
-                          </Button>
-                          {!inactive && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => handleDeactivate(item)}
-                            >
-                              Deactivate
-                            </Button>
-                          )}
-                        </div>
+                      <td className="px-4 py-3 text-right">
+                        <OverflowMenu items={menuItems} />
                       </td>
                     </tr>
                   )

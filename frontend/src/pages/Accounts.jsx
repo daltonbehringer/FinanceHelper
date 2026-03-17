@@ -11,6 +11,7 @@ import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
+import OverflowMenu from '../components/ui/OverflowMenu'
 
 const EMPTY_FORM = {
   name: '',
@@ -137,6 +138,42 @@ function AccountForm({ form, setForm, onSubmit, onCancel, loading, submitLabel }
         </Button>
       </div>
     </form>
+  )
+}
+
+function MobileAccountList({ accounts, onEdit, onDeactivate }) {
+  return (
+    <div className="divide-y divide-gray-100">
+      {accounts.map(a => {
+        const balance = a.current_balance ?? a.balance
+        const inactive = a.is_active === 0 || a.is_active === false
+        const menuItems = [{ label: 'Edit', onClick: () => onEdit(a) }]
+        if (!inactive) {
+          menuItems.push({ label: 'Deactivate', onClick: () => onDeactivate(a), danger: true })
+        }
+
+        return (
+          <div
+            key={a.id}
+            className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900 truncate">{a.name}</span>
+                {inactive && <Badge color="gray">Inactive</Badge>}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <Badge color={typeBadgeColor(a.type)}>{formatType(a.type)}</Badge>
+                <span className={`text-sm font-semibold ${isDebt(a.type) ? 'text-red-600' : 'text-green-600'}`}>
+                  {formatMoney(balance)}
+                </span>
+              </div>
+            </div>
+            <OverflowMenu items={menuItems} />
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -294,7 +331,7 @@ export default function Accounts() {
         </Card>
       )}
 
-      {/* Accounts table */}
+      {/* Accounts list/table */}
       {accounts.length === 0 ? (
         <Card>
           <EmptyState
@@ -314,20 +351,29 @@ export default function Accounts() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          {/* Mobile compact list */}
+          <div className="md:hidden">
+            <MobileAccountList
+              accounts={accounts}
+              onEdit={openEdit}
+              onDeactivate={handleDeactivate}
+            />
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Type</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Balance</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Rate</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Promo</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Min Payment</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Credit Limit</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Due Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Last Updated</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[16%]">Name</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[10%]">Type</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[12%]">Balance</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[8%]">Rate</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Promo</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%] hidden xl:table-cell">Min Pmt</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%] hidden xl:table-cell">Limit</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[10%] hidden lg:table-cell">Due Date</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -339,64 +385,48 @@ export default function Accounts() {
                       key={a.id}
                       className={`hover:bg-gray-50/50 transition-colors ${inactive ? 'opacity-50' : ''}`}
                     >
-                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                      <td className="px-4 py-3 font-medium text-gray-900 truncate">
                         {a.name}
                         {inactive && (
                           <Badge color="gray" className="ml-2">Inactive</Badge>
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3">
                         <Badge color={typeBadgeColor(a.type)}>{formatType(a.type)}</Badge>
                       </td>
-                      <td className={`px-4 py-3 text-right font-medium whitespace-nowrap ${
+                      <td className={`px-4 py-3 text-right font-medium truncate ${
                         isDebt(a.type) ? 'text-red-600' : 'text-green-600'
                       }`}>
                         {formatMoney(balance)}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right text-gray-600 truncate">
                         {formatRate(a.interest_rate)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3 hidden lg:table-cell">
                         {a.promo_rate ? (
                           <Badge color="yellow">
-                            {formatRate(a.promo_rate)} until {formatDate(a.promo_end_date)}
+                            {formatRate(a.promo_rate)}
                           </Badge>
                         ) : (
                           <span className="text-gray-400">{'\u2014'}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right text-gray-600 truncate hidden xl:table-cell">
                         {a.minimum_payment ? formatMoney(a.minimum_payment) : '\u2014'}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right text-gray-600 truncate hidden xl:table-cell">
                         {a.credit_limit ? formatMoney(a.credit_limit) : '\u2014'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      <td className="px-4 py-3 text-gray-600 truncate hidden lg:table-cell">
                         {formatDate(a.due_date)}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
-                        {formatDate(a.last_updated || a.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(a)}
-                          >
-                            Edit
-                          </Button>
-                          {!inactive && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => handleDeactivate(a)}
-                            >
-                              Deactivate
-                            </Button>
-                          )}
-                        </div>
+                      <td className="px-4 py-3 text-right">
+                        <OverflowMenu
+                          items={[
+                            { label: 'Edit', onClick: () => openEdit(a) },
+                            ...(!inactive ? [{ label: 'Deactivate', onClick: () => handleDeactivate(a), danger: true }] : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   )
