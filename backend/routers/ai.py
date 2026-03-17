@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date
+from datetime import date, timedelta
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
@@ -183,6 +183,54 @@ MONTHLY_MULTIPLIERS = {
 }
 
 
+def _next_payday(last_pay_date: str | None, frequency: str) -> str | None:
+    """Compute the next payday from last_pay_date and frequency. Returns ISO date string or None."""
+    if not last_pay_date:
+        return None
+    try:
+        d = date.fromisoformat(last_pay_date.split("T")[0])
+    except (ValueError, AttributeError):
+        return None
+    today = date.today()
+
+    def advance(dt: date) -> date:
+        if frequency == "weekly":
+            return dt + timedelta(days=7)
+        elif frequency == "biweekly":
+            return dt + timedelta(days=14)
+        elif frequency == "semimonthly":
+            return dt + timedelta(days=15)
+        elif frequency == "monthly":
+            m = dt.month % 12 + 1
+            y = dt.year + (1 if dt.month == 12 else 0)
+            return dt.replace(year=y, month=m)
+        elif frequency == "annual":
+            return dt.replace(year=dt.year + 1)
+        return dt + timedelta(days=30)
+
+    while d <= today:
+        d = advance(d)
+    return d.isoformat()
+
+
+def _next_expense_due(due_day: int | None, due_date: str | None, is_recurring: int) -> str | None:
+    """Compute the next due date for an expense. Returns ISO date string or None."""
+    if is_recurring and due_day:
+        today = date.today()
+        try:
+            candidate = today.replace(day=due_day)
+        except ValueError:
+            candidate = today.replace(day=28)
+        if candidate < today:
+            m = candidate.month % 12 + 1
+            y = candidate.year + (1 if candidate.month == 12 else 0)
+            candidate = candidate.replace(year=y, month=m)
+        return candidate.isoformat()
+    elif due_date:
+        return due_date.split("T")[0]
+    return None
+
+
 def _get_income_for_user(user_id: int) -> list[dict]:
     rows = fetchall(
         "SELECT id, name, amount, frequency, income_day, last_pay_date FROM recurring_income WHERE user_id = ? AND is_active = 1",
@@ -215,12 +263,19 @@ async def recommend(user_id: int = Depends(get_current_user)):
         monthly_income = sum(
             r["amount"] * MONTHLY_MULTIPLIERS.get(r["frequency"], 1.0) for r in income
         )
-        income_json = json.dumps(income, indent=2)
+        # Pre-compute next pay dates so the LLM doesn't have to do date math
+        income_with_next = []
+        for r in income:
+            entry = dict(r)
+            next_pay = _next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
+            if next_pay:
+                entry["next_payday"] = next_pay
+            income_with_next.append(entry)
+        income_json = json.dumps(income_with_next, indent=2)
         income_section = f"""
 Recurring income:
 {income_json}
 Estimated total monthly income: ${monthly_income:,.2f}
-If a source has a last_pay_date, use it with the frequency to calculate upcoming pay dates.
 Estimated monthly income is post-tax.
 """
 
@@ -230,12 +285,27 @@ Estimated monthly income is post-tax.
         recurring = [e for e in expenses if e.get("is_recurring", 1) != 0]
         one_time = [e for e in expenses if e.get("is_recurring", 1) == 0]
         monthly_expenses = sum(e["amount"] for e in recurring)
+        # Pre-compute next due dates
+        recurring_with_due = []
+        for e in recurring:
+            entry = dict(e)
+            next_due = _next_expense_due(e.get("due_day"), e.get("due_date"), 1)
+            if next_due:
+                entry["next_due_date"] = next_due
+            recurring_with_due.append(entry)
+        one_time_with_due = []
+        for e in one_time:
+            entry = dict(e)
+            next_due = _next_expense_due(None, e.get("due_date"), 0)
+            if next_due:
+                entry["next_due_date"] = next_due
+            one_time_with_due.append(entry)
         parts = []
-        if recurring:
-            parts.append(f"Recurring monthly expenses (non-negotiable obligations — rent, insurance, subscriptions, etc.):\n{json.dumps(recurring, indent=2)}\nTotal monthly recurring: ${monthly_expenses:,.2f}")
-        if one_time:
+        if recurring_with_due:
+            parts.append(f"Recurring monthly expenses (non-negotiable obligations — rent, insurance, subscriptions, etc.):\n{json.dumps(recurring_with_due, indent=2)}\nTotal monthly recurring: ${monthly_expenses:,.2f}")
+        if one_time_with_due:
             one_time_total = sum(e["amount"] for e in one_time)
-            parts.append(f"One-time upcoming expenses (these need to be budgeted for soon — check due_date if set):\n{json.dumps(one_time, indent=2)}\nTotal one-time: ${one_time_total:,.2f}")
+            parts.append(f"One-time upcoming expenses (these need to be budgeted for soon):\n{json.dumps(one_time_with_due, indent=2)}\nTotal one-time: ${one_time_total:,.2f}")
         expenses_section = "\n".join(parts) + "\n"
 
     disposable_note = ""
@@ -252,11 +322,13 @@ Today's date: {today}.
 
 Your response MUST follow this exact structure:
 
-1) PRIORITY ORDER — List each debt account in recommended payoff order. For each, state the account name, current balance, interest rate, and why it's ranked here.
+1) INCOME AND TIMING — State the user's next scheduled payday(s) with dates and amounts (use the pre-computed next_payday fields). Mention any bills or expenses due before that payday so the user knows what to set aside first.
 
-2) THIS MONTH'S ACTION PLAN — Specific dollar amounts to pay toward each account this month. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). Include minimum payments on all accounts plus any extra payments on the priority target. The total must not exceed the safe payment amount.
+2) PRIORITY ORDER — List each debt account in recommended payoff order. For each, state the account name, current balance, interest rate, and why it's ranked here.
 
-3) NEXT STEPS — 1-2 short actions the user should take after completing this month's payments (e.g. "Once Account X is paid off, redirect that $200/mo to Account Y").
+3) THIS MONTH'S ACTION PLAN — Specific dollar amounts to pay toward each account this month. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). Include minimum payments on all accounts plus any extra payments on the priority target. The total must not exceed the safe payment amount. Time the payments around the user's payday — do not recommend paying before income arrives.
+
+4) NEXT STEPS — 1-2 short actions the user should take after completing this month's payments (e.g. "Once Account X is paid off, redirect that $200/mo to Account Y").
 
 Formatting rules:
 - Be concise — use short bullet points, not lengthy paragraphs.
