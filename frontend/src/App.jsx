@@ -9,6 +9,14 @@ import Income from './pages/Income'
 import Advisor from './pages/Advisor'
 import History from './pages/History'
 
+// Extract session token from URL after OAuth redirect and store in cookie
+const params = new URLSearchParams(window.location.search)
+const _token = params.get('session_token')
+if (_token) {
+  document.cookie = `stytch_session=${_token}; path=/; max-age=3600; SameSite=lax`
+  window.history.replaceState({}, '', window.location.pathname)
+}
+
 export default function App() {
   return (
     <BrowserRouter>

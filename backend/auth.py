@@ -46,8 +46,9 @@ async def get_current_user(request: Request) -> int:
 async def login():
     public_token = os.getenv("STYTCH_PUBLIC_TOKEN", "")
     project_id = os.getenv("STYTCH_PROJECT_ID", "")
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     api_base = "https://test.stytch.com" if "test" in project_id else "https://api.stytch.com"
-    redirect_url = "http://localhost:8000/auth/callback"
+    redirect_url = f"{backend_url}/auth/callback"
     login_url = (
         f"{api_base}/v1/public/oauth/google/start"
         f"?public_token={public_token}"
@@ -67,15 +68,8 @@ async def callback(token: str):
         raise HTTPException(status_code=401, detail="OAuth authentication failed")
 
     session_token = resp.session_token
-    response = RedirectResponse(url="/")
-    response.set_cookie(
-        key="stytch_session",
-        value=session_token,
-        samesite="lax",
-        httponly=False,
-        max_age=3600,
-    )
-    return response
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000")
+    return RedirectResponse(url=f"{frontend_url}/?session_token={session_token}")
 
 
 @router.post("/logout")

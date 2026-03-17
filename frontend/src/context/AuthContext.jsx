@@ -23,7 +23,8 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await apiFetch('/auth/logout', { method: 'POST' })
     document.cookie = 'stytch_session=; Max-Age=0; path=/'
-    window.location.href = '/auth/login'
+    const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+    window.location.href = apiBase + '/auth/login'
   }
 
   if (loading) {
