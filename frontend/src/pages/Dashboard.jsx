@@ -263,6 +263,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Advisor Chat */}
+      <AdvisorChat accounts={accounts} onUpdate={refetchAccounts} />
+
       {/* Account sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Debts */}
@@ -335,9 +338,6 @@ export default function Dashboard() {
           </CardBody>
         </Card>
       )}
-
-      {/* Advisor Chat */}
-      <AdvisorChat accounts={accounts} onUpdate={refetchAccounts} />
     </div>
   )
 }
