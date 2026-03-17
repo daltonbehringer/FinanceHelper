@@ -60,7 +60,21 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)
 
-    parts = [f"Current accounts:\n{json.dumps(accounts, indent=2)}"]
+    # Pre-compute aggregates so the LLM doesn't have to do arithmetic
+    debt_types = {"credit_card", "loan", "mortgage", "line_of_credit"}
+    debt_accounts = [a for a in accounts if a["type"] in debt_types]
+    asset_accounts = [a for a in accounts if a["type"] not in debt_types]
+    total_debt = sum(a.get("current_balance") or 0 for a in debt_accounts)
+    total_assets = sum(a.get("current_balance") or 0 for a in asset_accounts)
+    net_worth = total_assets - total_debt
+
+    parts = [
+        f"Current accounts:\n{json.dumps(accounts, indent=2)}",
+        f"PRE-COMPUTED TOTALS (use these exact numbers, do NOT recalculate):\n"
+        f"  Total debt: ${total_debt:,.2f}\n"
+        f"  Total assets: ${total_assets:,.2f}\n"
+        f"  Net worth (assets minus debt): ${net_worth:,.2f}",
+    ]
 
     if income:
         monthly_income = sum(
@@ -118,6 +132,7 @@ If the message is a QUESTION or general inquiry, return:
 
 Answer rules:
 - Be specific: reference actual account names, balances, rates, and dates from the data.
+- For questions about totals (net worth, total debt, total assets), use the PRE-COMPUTED TOTALS provided — do NOT attempt to add up account balances yourself.
 - Keep answers concise but complete. Use plain text, no markdown.
 - For payoff strategy questions, prefer the debt avalanche method (highest interest rate first) unless there's a strong reason to deviate.
 - For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
