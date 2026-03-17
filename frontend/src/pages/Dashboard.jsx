@@ -5,7 +5,6 @@ import { useToast } from '../context/ToastContext'
 import { apiFetch } from '../lib/api'
 import {
   formatMoney,
-  formatRate,
   formatDate,
   formatType,
   isDebt,
@@ -44,25 +43,6 @@ function AccountCard({ account }) {
         </div>
 
         <div className="space-y-1.5 text-xs text-gray-500">
-          {account.interest_rate > 0 && (
-            <div className="flex justify-between">
-              <span>Interest Rate</span>
-              <span className="font-medium text-gray-700">{formatRate(account.interest_rate)}</span>
-            </div>
-          )}
-
-          {account.promo_rate != null && account.promo_rate > 0 && (
-            <div className="flex justify-between items-center">
-              <span>Promo Rate</span>
-              <div className="flex items-center gap-1.5">
-                <Badge color="yellow">{formatRate(account.promo_rate)}</Badge>
-                {account.promo_end_date && (
-                  <span className="text-gray-400">until {formatDate(account.promo_end_date)}</span>
-                )}
-              </div>
-            </div>
-          )}
-
           {account.due_date && (
             <div className="flex justify-between">
               <span>Due Date</span>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatMoney, formatRecommendation } from '../../lib/utils'
 import { useToast } from '../../context/ToastContext'
@@ -146,6 +146,15 @@ export default function AdvisorChat({ accounts, onUpdate }) {
     return account ? account.name : `Account #${id}`
   }
 
+  const textareaRef = useRef(null)
+
+  function autoResize() {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -160,23 +169,25 @@ export default function AdvisorChat({ accounts, onUpdate }) {
       </CardHeader>
       <CardBody className="space-y-4">
         {/* Input area */}
-        <div className="flex gap-3">
+        <div className="space-y-3">
           <textarea
+            ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); autoResize() }}
             onKeyDown={handleKeyDown}
             placeholder="Ask about your finances or update a balance..."
             rows={2}
-            className="flex-1 resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+            className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
           />
-          <Button
-            onClick={handleSend}
-            loading={loading}
-            disabled={!text.trim()}
-            className="self-end"
-          >
-            Send
-          </Button>
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSend}
+              loading={loading}
+              disabled={!text.trim()}
+            >
+              Send
+            </Button>
+          </div>
         </div>
 
         {/* Error */}
