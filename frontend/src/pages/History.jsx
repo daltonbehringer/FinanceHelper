@@ -64,7 +64,7 @@ export default function History() {
         </Select>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardBody className="p-0">
           {loading ? (
             <div className="flex items-center justify-center py-16">
@@ -76,50 +76,86 @@ export default function History() {
               description="Balance snapshots will appear here as you update your accounts."
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Account</th>
-                    <th className="px-5 py-3 text-right">Balance</th>
-                    <th className="px-5 py-3 text-right">Payment</th>
-                    <th className="px-5 py-3">Note</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {snapshots.map(snap => (
-                    <tr key={snap.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-5 py-3 whitespace-nowrap text-gray-700">
-                        {formatDate(snap.recorded_at)}
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap font-medium text-gray-900">
-                        {snap.account_name}
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap text-right text-gray-700">
-                        {formatMoney(snap.balance)}
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap text-right text-gray-700">
-                        {snap.payment_made ? formatMoney(snap.payment_made) : '\u2014'}
-                      </td>
-                      <td className="px-5 py-3 text-gray-500 max-w-xs truncate">
-                        {snap.note || '\u2014'}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setConfirmRestore(snap.id)}
-                        >
-                          Restore
-                        </Button>
-                      </td>
+            <>
+              {/* Mobile card list */}
+              <div className="md:hidden divide-y divide-gray-100">
+                {snapshots.map(snap => (
+                  <div key={snap.id} className="px-4 py-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-900 truncate">{snap.account_name}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmRestore(snap.id)}
+                      >
+                        Restore
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-gray-700 font-medium">{formatMoney(snap.balance)}</span>
+                      {snap.payment_made && (
+                        <span className="text-gray-500">Paid {formatMoney(snap.payment_made)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{formatDate(snap.recorded_at)}</span>
+                      {snap.note && (
+                        <>
+                          <span>&middot;</span>
+                          <span className="truncate">{snap.note}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-5 py-3">Date</th>
+                      <th className="px-5 py-3">Account</th>
+                      <th className="px-5 py-3 text-right">Balance</th>
+                      <th className="px-5 py-3 text-right">Payment</th>
+                      <th className="px-5 py-3">Note</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {snapshots.map(snap => (
+                      <tr key={snap.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-5 py-3 whitespace-nowrap text-gray-700">
+                          {formatDate(snap.recorded_at)}
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap font-medium text-gray-900">
+                          {snap.account_name}
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap text-right text-gray-700">
+                          {formatMoney(snap.balance)}
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap text-right text-gray-700">
+                          {snap.payment_made ? formatMoney(snap.payment_made) : '\u2014'}
+                        </td>
+                        <td className="px-5 py-3 text-gray-500 max-w-xs truncate">
+                          {snap.note || '\u2014'}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setConfirmRestore(snap.id)}
+                          >
+                            Restore
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardBody>
       </Card>

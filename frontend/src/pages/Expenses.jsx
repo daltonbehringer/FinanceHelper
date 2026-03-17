@@ -121,6 +121,13 @@ function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
           menuItems.push({ label: 'Deactivate', onClick: () => onDeactivate(exp), danger: true })
         }
 
+        let dueDisplay = null
+        if (isRecurring && exp.due_day) {
+          dueDisplay = `Due: Day ${exp.due_day}`
+        } else if (!isRecurring && exp.due_date) {
+          dueDisplay = `Due: ${formatDate(exp.due_date)}`
+        }
+
         return (
           <div
             key={exp.id}
@@ -138,6 +145,9 @@ function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
                   {formatMoney(exp.amount)}
                 </span>
               </div>
+              {dueDisplay && (
+                <div className="text-xs text-gray-500 mt-0.5">{dueDisplay}</div>
+              )}
             </div>
             <OverflowMenu items={menuItems} />
           </div>

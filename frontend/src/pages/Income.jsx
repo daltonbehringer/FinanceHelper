@@ -120,6 +120,8 @@ function MobileIncomeList({ income, onEdit, onDeactivate, onMarkPaid, markPaidLo
           menuItems.push({ label: 'Deactivate', onClick: () => onDeactivate(item), danger: true })
         }
 
+        const next = nextPayday(item.last_pay_date, item.frequency)
+
         return (
           <div
             key={item.id}
@@ -138,6 +140,9 @@ function MobileIncomeList({ income, onEdit, onDeactivate, onMarkPaid, markPaidLo
                   {formatMoney(item.amount)}
                 </span>
               </div>
+              {next && next !== '\u2014' && (
+                <div className="text-xs text-gray-500 mt-0.5">Next: {next}</div>
+              )}
             </div>
             <OverflowMenu items={menuItems} />
           </div>

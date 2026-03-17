@@ -169,6 +169,13 @@ function MobileAccountList({ accounts, onEdit, onDeactivate }) {
                   {formatMoney(balance)}
                 </span>
               </div>
+              {(a.minimum_payment || a.due_date) && (
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                  {a.minimum_payment && <span>Min: {formatMoney(a.minimum_payment)}</span>}
+                  {a.minimum_payment && a.due_date && <span>&middot;</span>}
+                  {a.due_date && <span>Due: {formatDate(a.due_date)}</span>}
+                </div>
+              )}
             </div>
             <OverflowMenu items={menuItems} />
           </div>
