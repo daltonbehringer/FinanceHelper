@@ -251,6 +251,38 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Recommendation result */}
+      {(recLoading || recommendation) && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">AI Recommendation</h2>
+              <div className="flex gap-2">
+                {recommendation && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleSavePdf}>
+                      Save as PDF
+                    </Button>
+                    <Button size="sm" onClick={handleGetRecommendation} loading={recLoading}>
+                      Refresh
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {recLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner className="text-gray-400" />
+              </div>
+            ) : (
+              <RecommendationContent items={formatRecommendation(recommendation)} />
+            )}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Advisor Chat */}
       <AdvisorChat accounts={accounts} onUpdate={refetchAccounts} />
 
@@ -294,38 +326,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* Recommendation result */}
-      {(recLoading || recommendation) && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">AI Recommendation</h2>
-              <div className="flex gap-2">
-                {recommendation && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={handleSavePdf}>
-                      Save as PDF
-                    </Button>
-                    <Button size="sm" onClick={handleGetRecommendation} loading={recLoading}>
-                      Refresh
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardBody>
-            {recLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="text-gray-400" />
-              </div>
-            ) : (
-              <RecommendationContent items={formatRecommendation(recommendation)} />
-            )}
-          </CardBody>
-        </Card>
-      )}
     </div>
   )
 }
