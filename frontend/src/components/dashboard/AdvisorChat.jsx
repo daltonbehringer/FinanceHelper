@@ -175,7 +175,7 @@ export default function AdvisorChat({ accounts, onUpdate }) {
             value={text}
             onChange={(e) => { setText(e.target.value); autoResize() }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your finances or update a balance..."
+            placeholder="Chat here to update a balance or ask questions about your finances. For balance updates, include the account name and new balance or payment amount. For questions, just ask!"
             rows={2}
             className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
           />
