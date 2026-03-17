@@ -313,8 +313,16 @@ Estimated monthly income is post-tax.
         min_payments = sum(a.get("minimum_payment") or 0 for a in accounts if a["type"] not in INVESTMENT_TYPES)
         disposable = monthly_income - monthly_expenses - min_payments
         disposable_note = f"""
-After expenses (${monthly_expenses:,.2f}) and minimum debt payments (${min_payments:,.2f}), estimated monthly disposable income is ${disposable:,.2f}.
-IMPORTANT: The tracked expenses above do NOT include variable essentials like groceries, transportation, utilities, or medical costs. Reserve at least 20% of monthly income (${monthly_income * 0.2:,.2f}) for these untracked essentials. The maximum safe amount available for extra debt payments is ${max(0, disposable - monthly_income * 0.2):,.2f}. Never recommend total extra payments exceeding this safe amount. Always remind the user to maintain an emergency buffer.
+BUDGET BREAKDOWN (use these exact numbers):
+  Monthly income: ${monthly_income:,.2f}
+  Recurring expenses (rent, bills, subscriptions, etc.): ${monthly_expenses:,.2f}
+  Minimum debt payments: ${min_payments:,.2f}
+  Subtotal obligations: ${monthly_expenses + min_payments:,.2f}
+  Remaining after obligations: ${disposable:,.2f}
+  20% essential reserve (groceries, gas, medical, etc.): ${monthly_income * 0.2:,.2f}
+  MAXIMUM safe amount for extra debt payments: ${max(0, disposable - monthly_income * 0.2):,.2f}
+
+CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it. Always remind the user to maintain an emergency buffer for untracked variable costs.
 """
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
@@ -322,11 +330,11 @@ Today's date: {today}.
 
 Your response MUST follow this exact structure:
 
-1) INCOME AND TIMING — State the user's next scheduled payday(s) with dates and amounts (use the pre-computed next_payday fields). Mention any bills or expenses due before that payday so the user knows what to set aside first.
+1) INCOME AND TIMING — State the user's next scheduled payday(s) with dates and amounts (use the pre-computed next_payday fields). List EVERY upcoming bill and recurring expense by name, amount, and due date (use the next_due_date fields). The user must see a complete picture of what's owed before any extra debt payments are suggested.
 
 2) PRIORITY ORDER — List each debt account in recommended payoff order. For each, state the account name, current balance, interest rate, and why it's ranked here.
 
-3) THIS MONTH'S ACTION PLAN — Specific dollar amounts to pay toward each account this month. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). Include minimum payments on all accounts plus any extra payments on the priority target. The total must not exceed the safe payment amount. Time the payments around the user's payday — do not recommend paying before income arrives.
+3) THIS MONTH'S ACTION PLAN — First, list every recurring expense and bill that must be paid (rent, subscriptions, insurance, etc.) with their amounts. Then list minimum debt payments. Only AFTER all of those are accounted for, recommend extra debt payments from the remaining safe amount. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). The total of all payments (expenses + minimums + extra) must not exceed income. Time the payments around the user's payday — do not recommend paying before income arrives.
 
 4) NEXT STEPS — 1-2 short actions the user should take after completing this month's payments (e.g. "Once Account X is paid off, redirect that $200/mo to Account Y").
 
@@ -334,7 +342,7 @@ Formatting rules:
 - Be concise — use short bullet points, not lengthy paragraphs.
 - Name each account, state why it's prioritized, and quantify the impact briefly.
 - Use the debt avalanche method (highest interest rate first) unless there is a strong reason to deviate.
-- Keep the entire response under 300 words. Do NOT use markdown formatting (no **, no ##, no *). Use plain text only.
+- Keep the entire response under 400 words. Do NOT use markdown formatting (no **, no ##, no *). Use plain text only.
 - Every recommendation must include specific dollar amounts — never say "pay extra" without a number.
 
 Account type guidance:
@@ -347,7 +355,7 @@ Current accounts:
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model=MODEL,
-        max_tokens=800,
+        max_tokens=1024,
         system=system_prompt,
         messages=[{"role": "user", "content": "What should I prioritize this month?"}],
     )
