@@ -138,6 +138,7 @@ Answer rules:
 - For questions about upcoming expenses or due dates, reference the due_day or due_date fields.
 - If promo rates are expiring soon, proactively mention it.
 - Estimated monthly income is post-tax.
+- CRITICAL SAFETY RULE: Never suggest the user put all or most of their available cash toward debt. They must always retain enough for essential living expenses (groceries, transportation, utilities, medical, etc.). When recommending payment amounts, reserve at least 20% of monthly income for variable essentials not captured in their tracked expenses. If the user asks about making a large lump-sum payment, warn them to keep an emergency buffer and budget for essentials before committing excess funds to debt.
 
 {financial_context}"""
 
@@ -243,7 +244,7 @@ Estimated monthly income is post-tax.
         disposable = monthly_income - monthly_expenses - min_payments
         disposable_note = f"""
 After expenses (${monthly_expenses:,.2f}) and minimum debt payments (${min_payments:,.2f}), estimated monthly disposable income is ${disposable:,.2f}.
-IMPORTANT: Never recommend total extra payments exceeding disposable income. Be realistic about what the user can afford and keep a buffer for typical expenses (groceries, gas, etc.).
+IMPORTANT: The tracked expenses above do NOT include variable essentials like groceries, transportation, utilities, or medical costs. Reserve at least 20% of monthly income (${monthly_income * 0.2:,.2f}) for these untracked essentials. The maximum safe amount available for extra debt payments is ${max(0, disposable - monthly_income * 0.2):,.2f}. Never recommend total extra payments exceeding this safe amount. Always remind the user to maintain an emergency buffer.
 """
 
     system_prompt = f"""You are a personal finance advisor. The user has provided their current debt and asset accounts.
