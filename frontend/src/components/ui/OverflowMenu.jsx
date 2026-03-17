@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 
 export default function OverflowMenu({ items }) {
   const [open, setOpen] = useState(false)
+  const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef(null)
 
   useEffect(() => {
@@ -13,10 +14,19 @@ export default function OverflowMenu({ items }) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
+  function handleOpen() {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      setOpenUpward(spaceBelow < 120)
+    }
+    setOpen(v => !v)
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={handleOpen}
         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
       >
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -25,7 +35,9 @@ export default function OverflowMenu({ items }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg bg-white shadow-lg ring-1 ring-black/5 py-1">
+        <div className={`absolute right-0 z-20 w-36 rounded-lg bg-white shadow-lg ring-1 ring-black/5 py-1 ${
+          openUpward ? 'bottom-full mb-1' : 'mt-1'
+        }`}>
           {items.map((item, i) => (
             <button
               key={i}
