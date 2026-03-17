@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatMoney, formatDate } from '../lib/utils'
 import { useExpenses } from '../hooks/useExpenses'
@@ -11,6 +11,7 @@ import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
 import OverflowMenu from '../components/ui/OverflowMenu'
+import SortableHeader from '../components/ui/SortableHeader'
 
 const INITIAL_FORM = {
   name: '',
@@ -146,6 +147,21 @@ function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
   )
 }
 
+function getSortValue(item, key) {
+  const isRecurring = item.is_recurring === 1 || item.is_recurring === true
+  switch (key) {
+    case 'name': return (item.name || '').toLowerCase()
+    case 'type': return isRecurring ? 'recurring' : 'one-time'
+    case 'amount': return item.amount ?? 0
+    case 'due': {
+      if (isRecurring) return item.due_day ?? 99
+      return item.due_date || 'zzzz'
+    }
+    case 'category': return (item.category || '').toLowerCase()
+    default: return ''
+  }
+}
+
 export default function Expenses() {
   const [showInactive, setShowInactive] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -153,9 +169,32 @@ export default function Expenses() {
   const [addForm, setAddForm] = useState(INITIAL_FORM)
   const [editForm, setEditForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
+  const [sortCol, setSortCol] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
 
   const { expenses, loading, refetch } = useExpenses(showInactive)
   const { showToast } = useToast()
+
+  const sorted = useMemo(() => {
+    const copy = [...expenses]
+    copy.sort((a, b) => {
+      const va = getSortValue(a, sortCol)
+      const vb = getSortValue(b, sortCol)
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return copy
+  }, [expenses, sortCol, sortDir])
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
 
   const handleAdd = async () => {
     setSubmitting(true)
@@ -318,7 +357,7 @@ export default function Expenses() {
           {/* Mobile compact list */}
           <div className="md:hidden">
             <MobileExpenseList
-              expenses={expenses}
+              expenses={sorted}
               onEdit={openEdit}
               onDeactivate={handleDeactivate}
             />
@@ -329,16 +368,16 @@ export default function Expenses() {
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[25%]">Name</th>
-                  <th className="text-right px-5 py-3 font-medium text-gray-500 w-[15%]">Amount</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[15%]">Type</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[20%] hidden lg:table-cell">Category</th>
-                  <th className="text-left px-5 py-3 font-medium text-gray-500 w-[15%] hidden lg:table-cell">Due</th>
+                  <SortableHeader label="Name" sortKey="name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[25%]" />
+                  <SortableHeader label="Type" sortKey="type" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[15%]" />
+                  <SortableHeader label="Amount" sortKey="amount" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[15%]" />
+                  <SortableHeader label="Due" sortKey="due" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[15%]" />
+                  <SortableHeader label="Category" sortKey="category" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[20%] hidden lg:table-cell" />
                   <th className="text-right px-5 py-3 font-medium text-gray-500 w-[10%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {expenses.map(exp => {
+                {sorted.map(exp => {
                   const inactive = exp.is_active === 0 || exp.is_active === false
                   const isRecurring = exp.is_recurring === 1 || exp.is_recurring === true
 
@@ -355,14 +394,15 @@ export default function Expenses() {
                       className={`hover:bg-gray-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
                     >
                       <td className="px-5 py-3 font-medium text-gray-900 truncate">{exp.name}</td>
-                      <td className="px-5 py-3 text-right text-gray-700 tabular-nums truncate">
-                        {formatMoney(exp.amount)}
-                      </td>
                       <td className="px-5 py-3">
                         <Badge color={isRecurring ? 'green' : 'blue'}>
                           {isRecurring ? 'Recurring' : 'One-time'}
                         </Badge>
                       </td>
+                      <td className="px-5 py-3 text-right text-gray-700 tabular-nums truncate">
+                        {formatMoney(exp.amount)}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 truncate">{dueDisplay}</td>
                       <td className="px-5 py-3 hidden lg:table-cell">
                         {exp.category ? (
                           <Badge color="gray">{exp.category}</Badge>
@@ -370,7 +410,6 @@ export default function Expenses() {
                           <span className="text-gray-400">{'\u2014'}</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-gray-600 truncate hidden lg:table-cell">{dueDisplay}</td>
                       <td className="px-5 py-3 text-right">
                         <OverflowMenu
                           items={[

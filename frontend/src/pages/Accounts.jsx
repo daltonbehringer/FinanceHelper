@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatMoney, formatRate, formatDate, formatType, isDebt } from '../lib/utils'
 import { useAccounts } from '../hooks/useAccounts'
@@ -12,6 +12,7 @@ import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
 import OverflowMenu from '../components/ui/OverflowMenu'
+import SortableHeader from '../components/ui/SortableHeader'
 
 const EMPTY_FORM = {
   name: '',
@@ -177,6 +178,19 @@ function MobileAccountList({ accounts, onEdit, onDeactivate }) {
   )
 }
 
+function getSortValue(item, key) {
+  switch (key) {
+    case 'name': return (item.name || '').toLowerCase()
+    case 'type': return (item.type || '').toLowerCase()
+    case 'balance': return item.current_balance ?? item.balance ?? 0
+    case 'minimum_payment': return item.minimum_payment ?? 0
+    case 'due_date': return item.due_date || ''
+    case 'interest_rate': return item.interest_rate ?? 0
+    case 'promo': return item.promo_rate ?? 0
+    default: return ''
+  }
+}
+
 export default function Accounts() {
   const [showInactive, setShowInactive] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -185,9 +199,32 @@ export default function Accounts() {
   const [editForm, setEditForm] = useState(EMPTY_FORM)
   const [addLoading, setAddLoading] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
+  const [sortCol, setSortCol] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
 
   const { accounts, loading, refetch } = useAccounts(showInactive)
   const { showToast } = useToast()
+
+  const sorted = useMemo(() => {
+    const copy = [...accounts]
+    copy.sort((a, b) => {
+      const va = getSortValue(a, sortCol)
+      const vb = getSortValue(b, sortCol)
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return copy
+  }, [accounts, sortCol, sortDir])
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
 
   function buildPayload(form) {
     const payload = {
@@ -354,7 +391,7 @@ export default function Accounts() {
           {/* Mobile compact list */}
           <div className="md:hidden">
             <MobileAccountList
-              accounts={accounts}
+              accounts={sorted}
               onEdit={openEdit}
               onDeactivate={handleDeactivate}
             />
@@ -365,19 +402,18 @@ export default function Accounts() {
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[16%]">Name</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[10%]">Type</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[12%]">Balance</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[8%]">Rate</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Promo</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%] hidden xl:table-cell">Min Pmt</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%] hidden xl:table-cell">Limit</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[10%] hidden lg:table-cell">Due Date</th>
+                  <SortableHeader label="Name" sortKey="name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[18%]" />
+                  <SortableHeader label="Type" sortKey="type" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[12%]" />
+                  <SortableHeader label="Balance" sortKey="balance" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[14%]" />
+                  <SortableHeader label="Min Payment" sortKey="minimum_payment" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[12%] hidden lg:table-cell" />
+                  <SortableHeader label="Due Date" sortKey="due_date" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[12%] hidden lg:table-cell" />
+                  <SortableHeader label="Rate" sortKey="interest_rate" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[10%]" />
+                  <SortableHeader label="Promo" sortKey="promo" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[12%] hidden xl:table-cell" />
                   <th className="px-4 py-3 text-right font-medium text-gray-500 w-[10%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {accounts.map(a => {
+                {sorted.map(a => {
                   const balance = a.current_balance ?? a.balance
                   const inactive = a.is_active === 0 || a.is_active === false
                   return (
@@ -399,10 +435,16 @@ export default function Accounts() {
                       }`}>
                         {formatMoney(balance)}
                       </td>
+                      <td className="px-4 py-3 text-right text-gray-600 truncate hidden lg:table-cell">
+                        {a.minimum_payment ? formatMoney(a.minimum_payment) : '\u2014'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 truncate hidden lg:table-cell">
+                        {formatDate(a.due_date)}
+                      </td>
                       <td className="px-4 py-3 text-right text-gray-600 truncate">
                         {formatRate(a.interest_rate)}
                       </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
+                      <td className="px-4 py-3 hidden xl:table-cell">
                         {a.promo_rate ? (
                           <Badge color="yellow">
                             {formatRate(a.promo_rate)}
@@ -410,15 +452,6 @@ export default function Accounts() {
                         ) : (
                           <span className="text-gray-400">{'\u2014'}</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600 truncate hidden xl:table-cell">
-                        {a.minimum_payment ? formatMoney(a.minimum_payment) : '\u2014'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600 truncate hidden xl:table-cell">
-                        {a.credit_limit ? formatMoney(a.credit_limit) : '\u2014'}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 truncate hidden lg:table-cell">
-                        {formatDate(a.due_date)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <OverflowMenu

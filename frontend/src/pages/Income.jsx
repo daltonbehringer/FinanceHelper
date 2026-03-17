@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatMoney, formatDate, formatFrequency, monthlyEquiv, nextPayday } from '../lib/utils'
 import { useIncome } from '../hooks/useIncome'
@@ -12,6 +12,7 @@ import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
 import OverflowMenu from '../components/ui/OverflowMenu'
+import SortableHeader from '../components/ui/SortableHeader'
 
 const EMPTY_FORM = {
   name: '',
@@ -30,6 +31,8 @@ function freqBadgeColor(frequency) {
     annual: 'yellow',
   }[frequency] || 'gray'
 }
+
+const FREQ_ORDER = { weekly: 0, biweekly: 1, semimonthly: 2, monthly: 3, annual: 4 }
 
 function IncomeForm({ form, setForm, onSubmit, onCancel, loading, submitLabel }) {
   function handleChange(e) {
@@ -144,6 +147,18 @@ function MobileIncomeList({ income, onEdit, onDeactivate, onMarkPaid, markPaidLo
   )
 }
 
+function getSortValue(item, key) {
+  switch (key) {
+    case 'name': return (item.name || '').toLowerCase()
+    case 'amount': return item.amount ?? 0
+    case 'frequency': return FREQ_ORDER[item.frequency] ?? 99
+    case 'next_payday': return nextPayday(item.last_pay_date, item.frequency)
+    case 'last_paid': return item.last_pay_date || ''
+    case 'monthly_equiv': return monthlyEquiv(item.amount, item.frequency)
+    default: return ''
+  }
+}
+
 export default function Income() {
   const [showInactive, setShowInactive] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -153,9 +168,32 @@ export default function Income() {
   const [addLoading, setAddLoading] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
   const [markPaidLoading, setMarkPaidLoading] = useState(null)
+  const [sortCol, setSortCol] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
 
   const { income, loading, refetch } = useIncome(showInactive)
   const { showToast } = useToast()
+
+  const sorted = useMemo(() => {
+    const copy = [...income]
+    copy.sort((a, b) => {
+      const va = getSortValue(a, sortCol)
+      const vb = getSortValue(b, sortCol)
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return copy
+  }, [income, sortCol, sortDir])
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
 
   function buildPayload(form) {
     const payload = {
@@ -334,7 +372,7 @@ export default function Income() {
           {/* Mobile compact list */}
           <div className="md:hidden">
             <MobileIncomeList
-              income={income}
+              income={sorted}
               onEdit={openEdit}
               onDeactivate={handleDeactivate}
               onMarkPaid={handleMarkPaid}
@@ -347,17 +385,17 @@ export default function Income() {
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[18%]">Name</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Amount</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[12%]">Frequency</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Monthly Equiv</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Last Paid</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 w-[14%] hidden lg:table-cell">Next Payday</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[14%]">Actions</th>
+                  <SortableHeader label="Name" sortKey="name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[18%]" />
+                  <SortableHeader label="Amount" sortKey="amount" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[14%]" />
+                  <SortableHeader label="Frequency" sortKey="frequency" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[14%]" />
+                  <SortableHeader label="Next Payday" sortKey="next_payday" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[14%]" />
+                  <SortableHeader label="Last Paid" sortKey="last_paid" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-left w-[14%] hidden lg:table-cell" />
+                  <SortableHeader label="Monthly Equiv" sortKey="monthly_equiv" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="text-right w-[14%] hidden lg:table-cell" />
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 w-[12%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {income.map(item => {
+                {sorted.map(item => {
                   const inactive = item.is_active === 0 || item.is_active === false
                   const menuItems = [{ label: 'Edit', onClick: () => openEdit(item) }]
                   if (item.last_pay_date && !inactive) {
@@ -386,14 +424,14 @@ export default function Income() {
                           {formatFrequency(item.frequency)}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-green-600 truncate">
-                        {formatMoney(monthlyEquiv(item.amount, item.frequency))}
+                      <td className="px-4 py-3 font-bold text-green-600 truncate">
+                        {nextPayday(item.last_pay_date, item.frequency)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 truncate hidden lg:table-cell">
                         {formatDate(item.last_pay_date)}
                       </td>
-                      <td className="px-4 py-3 font-bold text-green-600 truncate hidden lg:table-cell">
-                        {nextPayday(item.last_pay_date, item.frequency)}
+                      <td className="px-4 py-3 text-right font-medium text-green-600 truncate hidden lg:table-cell">
+                        {formatMoney(monthlyEquiv(item.amount, item.frequency))}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <OverflowMenu items={menuItems} />
