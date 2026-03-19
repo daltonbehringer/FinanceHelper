@@ -265,6 +265,19 @@ export default function AdvisorChat({ accounts, onUpdate }) {
                 </>
               )}
 
+              {response.interest_portion != null && response.principal_portion != null && (
+                <>
+                  <span className="text-amber-700">Interest Portion</span>
+                  <span className="font-medium text-amber-900">
+                    {formatMoney(response.interest_portion)}
+                  </span>
+                  <span className="text-amber-700">Principal Portion</span>
+                  <span className="font-medium text-amber-900">
+                    {formatMoney(response.principal_portion)}
+                  </span>
+                </>
+              )}
+
               {response.note && (
                 <>
                   <span className="text-amber-700">Note</span>

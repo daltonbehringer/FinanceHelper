@@ -153,6 +153,8 @@ If the message is a BALANCE UPDATE, return:
   "account_id": <int or null>,
   "new_balance": <float or null>,
   "payment_made": <float or null>,
+  "interest_portion": <float or null>,
+  "principal_portion": <float or null>,
   "note": <string summarizing what the user said>,
   "source_account_id": <int or null>,
   "source_new_balance": <float or null>
@@ -160,10 +162,14 @@ If the message is a BALANCE UPDATE, return:
 
 Balance update rules:
 - Set account_id to null if the debt/target account is ambiguous or unrecognized.
-- If the user states a specific new balance, use that as new_balance.
-- If the user says they made a payment but does NOT state a new balance, compute new_balance = current_balance - payment_made using the account data below.
+- If the user states a specific new balance, use that as new_balance. Do NOT include interest_portion or principal_portion when the user provides an explicit balance.
 - Set payment_made to the payment amount if mentioned, otherwise null.
 - Set new_balance to null ONLY if no balance can be determined.
+- If the user says they made a payment but does NOT state a new balance, compute new_balance based on the account type:
+  - REVOLVING DEBT (credit_card, line_of_credit): new_balance = current_balance - payment_made. Set interest_portion and principal_portion to null.
+  - INSTALLMENT DEBT (loan, mortgage): Part of each payment goes to interest. Compute: monthly_interest = current_balance * (interest_rate / 100 / 12). Then principal_paid = payment_made - monthly_interest. Then new_balance = current_balance - principal_paid. Set interest_portion = monthly_interest (rounded to 2 decimals) and principal_portion = principal_paid (rounded to 2 decimals). If interest_rate is 0, treat the same as revolving debt. If payment_made <= monthly_interest, set new_balance = current_balance, principal_portion = 0, and interest_portion = payment_made.
+  - NON-DEBT accounts: new_balance = current_balance - payment_made. Set interest_portion and principal_portion to null.
+- For installment debt payments, include the interest/principal breakdown in the note field (e.g. "Paid $600 on Car Loan — $97.50 interest, $502.50 principal").
 
 Source (payment) account rules:
 - source_account_id is the account the payment was made FROM (e.g. a checking account).
