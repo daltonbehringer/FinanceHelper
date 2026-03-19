@@ -124,7 +124,7 @@ def _migrate_expenses_one_time(conn: sqlite3.Connection):
 
 
 def _migrate_settings_default_payment(conn: sqlite3.Connection):
-    """Add default_payment_account_id column to user_settings."""
+    """Add default_payment_account_id and payment_account_configured columns to user_settings."""
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='user_settings'"
     ).fetchone()
@@ -133,6 +133,10 @@ def _migrate_settings_default_payment(conn: sqlite3.Connection):
     cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
     if "default_payment_account_id" not in cols:
         conn.execute("ALTER TABLE user_settings ADD COLUMN default_payment_account_id INTEGER REFERENCES accounts(id)")
+    if "payment_account_configured" not in cols:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN payment_account_configured INTEGER NOT NULL DEFAULT 0")
+    # Clean up any invalid sentinel values (-1) from prior bug
+    conn.execute("UPDATE user_settings SET default_payment_account_id = NULL, payment_account_configured = 1 WHERE default_payment_account_id IS NOT NULL AND default_payment_account_id < 0")
 
 
 def init_db():
@@ -199,6 +203,7 @@ def init_db():
             user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
             min_checking                REAL NOT NULL DEFAULT 0,
             default_payment_account_id  INTEGER REFERENCES accounts(id),
+            payment_account_configured  INTEGER NOT NULL DEFAULT 0,
             updated_at                  TEXT NOT NULL
         );
 
