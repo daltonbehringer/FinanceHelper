@@ -56,7 +56,16 @@ def _strip_markdown_fencing(text: str) -> str:
 
 def _get_user_settings(user_id: int) -> dict:
     row = fetchone("SELECT * FROM user_settings WHERE user_id = ?", (user_id,))
-    return dict(row) if row else {"min_checking": 0}
+    result = dict(row) if row else {"min_checking": 0, "default_payment_account_id": None}
+    # Auto-detect: if no default payment account set and user has exactly one checking account
+    if not result.get("default_payment_account_id"):
+        checking = fetchall(
+            "SELECT id FROM accounts WHERE user_id = ? AND type = 'checking' AND is_active = 1",
+            (user_id,),
+        )
+        if len(checking) == 1:
+            result["default_payment_account_id"] = checking[0]["id"]
+    return result
 
 
 def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
@@ -75,6 +84,7 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
     net_worth = total_assets - total_debt
 
     min_checking = settings.get("min_checking") or 0
+    default_payment_id = settings.get("default_payment_account_id")
 
     parts = [
         f"Current accounts:\n{json.dumps(accounts, indent=2)}",
@@ -83,6 +93,16 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         f"  Total assets: ${total_assets:,.2f}\n"
         f"  Net worth (assets minus debt): ${net_worth:,.2f}",
     ]
+
+    if default_payment_id:
+        default_acct = next((a for a in accounts if a["id"] == default_payment_id), None)
+        if default_acct:
+            parts.append(
+                f"DEFAULT PAYMENT ACCOUNT: \"{default_acct['name']}\" (id: {default_payment_id}, "
+                f"current balance: ${default_acct.get('current_balance') or 0:,.2f})\n"
+                f"When the user reports a payment on a debt account, this is the account the "
+                f"payment is made FROM unless they specify otherwise."
+            )
 
     if min_checking > 0:
         parts.append(
@@ -122,7 +142,7 @@ async def chat(body: ChatRequest, user_id: int = Depends(get_current_user)):
     system_prompt = f"""You are a personal finance advisor and assistant. Today's date: {today}.
 
 The user will send you a message. It could be:
-1. A balance update or payment (e.g. "paid $300 on Chase Sapphire", "Discover balance is now $1,850")
+1. A balance update or payment (e.g. "paid $300 on Chase Sapphire", "Discover balance is now $1,850", "Made minimum payment on Amex from Chase Checking")
 2. A general question about their finances (e.g. "when is my next payment due?", "how much do I owe total?", "should I pay off my credit card or save?")
 
 STEP 1: Determine the intent. Return ONLY valid JSON — no explanation, no markdown fencing.
@@ -133,15 +153,25 @@ If the message is a BALANCE UPDATE, return:
   "account_id": <int or null>,
   "new_balance": <float or null>,
   "payment_made": <float or null>,
-  "note": <string summarizing what the user said>
+  "note": <string summarizing what the user said>,
+  "source_account_id": <int or null>,
+  "source_new_balance": <float or null>
 }}
 
 Balance update rules:
-- Set account_id to null if the account is ambiguous or unrecognized.
+- Set account_id to null if the debt/target account is ambiguous or unrecognized.
 - If the user states a specific new balance, use that as new_balance.
 - If the user says they made a payment but does NOT state a new balance, compute new_balance = current_balance - payment_made using the account data below.
 - Set payment_made to the payment amount if mentioned, otherwise null.
 - Set new_balance to null ONLY if no balance can be determined.
+
+Source (payment) account rules:
+- source_account_id is the account the payment was made FROM (e.g. a checking account).
+- If the user specifies which account they paid from (e.g. "from Chase Checking"), set source_account_id to that account's id.
+- If the user does NOT specify a source account but a DEFAULT PAYMENT ACCOUNT is configured (see financial context below), use that account's id as source_account_id.
+- Compute source_new_balance = source account's current_balance - payment_made.
+- If no source account can be determined (no default configured and user didn't specify), set both source_account_id and source_new_balance to null.
+- NEVER set source_account_id to the same account as account_id.
 
 If the message is a QUESTION or general inquiry, return:
 {{

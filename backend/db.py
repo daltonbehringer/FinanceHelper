@@ -123,6 +123,18 @@ def _migrate_expenses_one_time(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE recurring_expenses ADD COLUMN due_date TEXT")
 
 
+def _migrate_settings_default_payment(conn: sqlite3.Connection):
+    """Add default_payment_account_id column to user_settings."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='user_settings'"
+    ).fetchone()
+    if not row:
+        return  # Table doesn't exist yet, will be created below
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
+    if "default_payment_account_id" not in cols:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN default_payment_account_id INTEGER REFERENCES accounts(id)")
+
+
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -133,6 +145,7 @@ def init_db():
         _migrate_expenses_due_day(conn)
         _migrate_expenses_one_time(conn)
         _migrate_income_last_pay_date(conn)
+        _migrate_settings_default_payment(conn)
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -182,10 +195,11 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS user_settings (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id         INTEGER NOT NULL UNIQUE REFERENCES users(id),
-            min_checking    REAL NOT NULL DEFAULT 0,
-            updated_at      TEXT NOT NULL
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
+            min_checking                REAL NOT NULL DEFAULT 0,
+            default_payment_account_id  INTEGER REFERENCES accounts(id),
+            updated_at                  TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS recurring_income (
