@@ -109,6 +109,7 @@ export default function AdvisorChat({ accounts, onUpdate }) {
 
     setConfirming(true)
     try {
+      // Create snapshot for the primary (debt) account
       const resp = await apiFetch('/api/snapshots', {
         method: 'POST',
         body: JSON.stringify({
@@ -124,7 +125,29 @@ export default function AdvisorChat({ accounts, onUpdate }) {
         return
       }
 
-      showToast('Balance updated successfully', 'success')
+      // Create snapshot for the source (payment) account if present
+      if (response.source_account_id != null && response.source_new_balance != null) {
+        const sourceResp = await apiFetch('/api/snapshots', {
+          method: 'POST',
+          body: JSON.stringify({
+            account_id: response.source_account_id,
+            balance: response.source_new_balance,
+            note: `Payment of ${formatMoney(response.payment_made)} to ${getAccountName(accountId)}`,
+          }),
+        })
+
+        if (!sourceResp || !sourceResp.ok) {
+          showToast('Debt updated, but failed to update payment account', 'error')
+          onUpdate?.()
+          handleClear()
+          return
+        }
+      }
+
+      const msg = response.source_account_id != null
+        ? 'Both accounts updated successfully'
+        : 'Balance updated successfully'
+      showToast(msg, 'success')
       onUpdate?.()
       handleClear()
     } catch {
@@ -249,6 +272,23 @@ export default function AdvisorChat({ accounts, onUpdate }) {
                 </>
               )}
             </div>
+
+            {/* Source account deduction preview */}
+            {response.source_account_id != null && response.source_new_balance != null && (
+              <div className="mt-3 pt-3 border-t border-amber-200">
+                <h4 className="text-xs font-semibold text-amber-800 mb-2">Also Updating (Payment Source)</h4>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <span className="text-amber-700">Account</span>
+                  <span className="font-medium text-amber-900">
+                    {getAccountName(response.source_account_id)}
+                  </span>
+                  <span className="text-amber-700">New Balance</span>
+                  <span className="font-medium text-amber-900">
+                    {formatMoney(response.source_new_balance)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Manual account selection if account_id is null */}
             {response.account_id == null && (
