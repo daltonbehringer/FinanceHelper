@@ -1,10 +1,13 @@
 import { useState, useRef } from 'react'
 import { apiFetch } from '../../lib/api'
-import { formatMoney, formatRecommendation } from '../../lib/utils'
+import { formatMoney, formatRecommendation, isDebt } from '../../lib/utils'
 import { useToast } from '../../context/ToastContext'
+import { useSettings } from '../../hooks/useSettings'
 import Card, { CardHeader, CardBody } from '../ui/Card'
 import Button from '../ui/Button'
 import Spinner from '../ui/Spinner'
+
+const LIQUID_TYPES = ['checking', 'savings', 'other']
 
 function RecommendationContent({ items }) {
   return (
@@ -48,13 +51,18 @@ function RecommendationContent({ items }) {
 
 export default function AdvisorChat({ accounts, onUpdate }) {
   const { showToast } = useToast()
+  const { settings } = useSettings()
 
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [response, setResponse] = useState(null)
   const [error, setError] = useState('')
   const [manualAccountId, setManualAccountId] = useState('')
+  const [manualSourceAccountId, setManualSourceAccountId] = useState('')
   const [confirming, setConfirming] = useState(false)
+
+  const hasDefaultPaymentAccount = !!settings.default_payment_account_id
+  const liquidAccounts = accounts.filter(a => LIQUID_TYPES.includes(a.type))
 
   async function handleSend() {
     if (!text.trim()) return
@@ -107,6 +115,30 @@ export default function AdvisorChat({ accounts, onUpdate }) {
       return
     }
 
+    if (response.new_balance == null) {
+      setError('Could not determine the new balance. Please try again with more details.')
+      return
+    }
+
+    // Resolve source account: use AI's suggestion if default is configured,
+    // otherwise use the manual dropdown selection
+    const needsSourceSelection = showSourceDropdown
+    let sourceAccountId = null
+    let sourceNewBalance = null
+
+    if (hasDefaultPaymentAccount) {
+      // Default is configured — trust AI's source fields
+      sourceAccountId = response.source_account_id
+      sourceNewBalance = response.source_new_balance
+    } else if (needsSourceSelection && manualSourceAccountId) {
+      // No default — user selected from dropdown
+      sourceAccountId = Number(manualSourceAccountId)
+      const sourceAcct = accounts.find(a => a.id === sourceAccountId)
+      if (sourceAcct && response.payment_made != null) {
+        sourceNewBalance = (sourceAcct.current_balance ?? sourceAcct.balance) - response.payment_made
+      }
+    }
+
     setConfirming(true)
     try {
       // Create snapshot for the primary (debt) account
@@ -126,12 +158,12 @@ export default function AdvisorChat({ accounts, onUpdate }) {
       }
 
       // Create snapshot for the source (payment) account if present
-      if (response.source_account_id != null && response.source_new_balance != null) {
+      if (sourceAccountId != null && sourceNewBalance != null) {
         const sourceResp = await apiFetch('/api/snapshots', {
           method: 'POST',
           body: JSON.stringify({
-            account_id: response.source_account_id,
-            balance: response.source_new_balance,
+            account_id: sourceAccountId,
+            balance: sourceNewBalance,
             note: `Payment of ${formatMoney(response.payment_made)} to ${getAccountName(accountId)}`,
           }),
         })
@@ -144,7 +176,7 @@ export default function AdvisorChat({ accounts, onUpdate }) {
         }
       }
 
-      const msg = response.source_account_id != null
+      const msg = sourceAccountId != null
         ? 'Both accounts updated successfully'
         : 'Balance updated successfully'
       showToast(msg, 'success')
@@ -162,6 +194,7 @@ export default function AdvisorChat({ accounts, onUpdate }) {
     setResponse(null)
     setError('')
     setManualAccountId('')
+    setManualSourceAccountId('')
   }
 
   function getAccountName(id) {
@@ -184,6 +217,18 @@ export default function AdvisorChat({ accounts, onUpdate }) {
       handleSend()
     }
   }
+
+  // Determine if the target account is a debt account
+  const targetAccountId = response?.account_id ?? (manualAccountId ? Number(manualAccountId) : null)
+  const targetAccount = targetAccountId ? accounts.find(a => a.id === targetAccountId) : null
+  const targetIsDebt = targetAccount ? isDebt(targetAccount.type) : false
+
+  // Show source account dropdown when: no default configured, target is debt, and a payment was made
+  const showSourceDropdown = response
+    && response.type !== 'question'
+    && !hasDefaultPaymentAccount
+    && targetIsDebt
+    && response.payment_made != null
 
   return (
     <Card>
@@ -286,8 +331,8 @@ export default function AdvisorChat({ accounts, onUpdate }) {
               )}
             </div>
 
-            {/* Source account deduction preview */}
-            {response.source_account_id != null && response.source_new_balance != null && (
+            {/* Source account deduction preview (when default payment account is configured) */}
+            {hasDefaultPaymentAccount && response.source_account_id != null && response.source_new_balance != null && (
               <div className="mt-3 pt-3 border-t border-amber-200">
                 <h4 className="text-xs font-semibold text-amber-800 mb-2">Also Updating (Payment Source)</h4>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -300,6 +345,27 @@ export default function AdvisorChat({ accounts, onUpdate }) {
                     {formatMoney(response.source_new_balance)}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Source account dropdown (when no default is configured and this is a debt payment) */}
+            {showSourceDropdown && (
+              <div>
+                <label className="block text-xs font-medium text-amber-800 mb-1">
+                  Deduct payment from
+                </label>
+                <select
+                  value={manualSourceAccountId}
+                  onChange={(e) => setManualSourceAccountId(e.target.value)}
+                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">None (don't deduct from any account)</option>
+                  {liquidAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({formatMoney(a.current_balance ?? a.balance)})
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

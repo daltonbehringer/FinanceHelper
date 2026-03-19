@@ -173,10 +173,10 @@ Balance update rules:
 
 Source (payment) account rules:
 - source_account_id is the account the payment was made FROM (e.g. a checking account).
-- If the user specifies which account they paid from (e.g. "from Chase Checking"), set source_account_id to that account's id.
-- If the user does NOT specify a source account but a DEFAULT PAYMENT ACCOUNT is configured (see financial context below), use that account's id as source_account_id.
+- If the user explicitly specifies which account they paid from (e.g. "from Chase Checking"), set source_account_id to that account's id.
+- If the user does NOT explicitly name a source account but a DEFAULT PAYMENT ACCOUNT is configured (see financial context below), use that default account's id as source_account_id.
 - Compute source_new_balance = source account's current_balance - payment_made.
-- If no source account can be determined (no default configured and user didn't specify), set both source_account_id and source_new_balance to null.
+- IMPORTANT: If NO DEFAULT PAYMENT ACCOUNT is listed in the financial context below AND the user did NOT explicitly name a source account, you MUST set both source_account_id and source_new_balance to null. Do NOT guess or infer a source account from the account list — the frontend will prompt the user to select one.
 - NEVER set source_account_id to the same account as account_id.
 
 If the message is a QUESTION or general inquiry, return:
