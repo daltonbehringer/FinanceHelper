@@ -123,7 +123,7 @@ function MobileExpenseList({ expenses, onEdit, onDeactivate }) {
 
         let dueDisplay = null
         if (isRecurring && exp.due_day) {
-          dueDisplay = `Due: ${nextDueDate(exp.due_day)}`
+          dueDisplay = `Due: ${nextDueDate(exp.due_day, exp.last_paid_date)}`
         } else if (!isRecurring && exp.due_date) {
           dueDisplay = `Due: ${formatDate(exp.due_date)}`
         }
@@ -413,7 +413,7 @@ export default function Expenses() {
 
                   let dueDisplay = '\u2014'
                   if (isRecurring) {
-                    dueDisplay = exp.due_day ? nextDueDate(exp.due_day) : '\u2014'
+                    dueDisplay = exp.due_day ? nextDueDate(exp.due_day, exp.last_paid_date) : '\u2014'
                   } else {
                     dueDisplay = exp.due_date ? formatDate(exp.due_date) : '\u2014'
                   }

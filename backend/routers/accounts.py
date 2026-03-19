@@ -51,11 +51,11 @@ async def list_accounts(
         SELECT a.*,
             COALESCE(
                 (SELECT s.balance FROM account_snapshots s
-                 WHERE s.account_id = a.id ORDER BY s.recorded_at DESC LIMIT 1),
+                 WHERE s.account_id = a.id ORDER BY s.id DESC LIMIT 1),
                 a.balance
             ) AS current_balance,
             (SELECT s.recorded_at FROM account_snapshots s
-             WHERE s.account_id = a.id ORDER BY s.recorded_at DESC LIMIT 1) AS last_updated
+             WHERE s.account_id = a.id ORDER BY s.id DESC LIMIT 1) AS last_updated
         FROM accounts a
         WHERE a.user_id = ? {active_filter}
         ORDER BY a.name

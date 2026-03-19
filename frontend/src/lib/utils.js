@@ -88,7 +88,7 @@ export function nextPayday(lastPayDate, frequency) {
   return formatDate(d.toISOString().split('T')[0])
 }
 
-export function nextDueDate(dueDay) {
+export function nextDueDate(dueDay, lastPaidDate) {
   if (dueDay == null) return '\u2014'
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -99,6 +99,17 @@ export function nextDueDate(dueDay) {
   if (candidate < today) {
     // Already passed this month, use next month
     candidate = new Date(y, m + 1, dueDay)
+  }
+  // If already paid for this billing period, push to next month.
+  // The billing period for a candidate starts at the previous month's due day.
+  // E.g. candidate = Apr 7 → period starts Mar 7. If paid on or after Mar 7,
+  // the Apr 7 bill is covered → advance to May 7.
+  if (lastPaidDate) {
+    const paid = new Date(lastPaidDate + 'T00:00:00')
+    const prevDue = new Date(candidate.getFullYear(), candidate.getMonth() - 1, dueDay)
+    if (paid >= prevDue) {
+      candidate = new Date(candidate.getFullYear(), candidate.getMonth() + 1, dueDay)
+    }
   }
   return formatDate(candidate.toISOString().split('T')[0])
 }

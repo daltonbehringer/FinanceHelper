@@ -104,7 +104,7 @@ function RecommendationContent({ items }) {
 
 export default function Dashboard() {
   const { accounts, loading: accountsLoading, refetch: refetchAccounts } = useAccounts()
-  const { expenses, loading: expensesLoading } = useExpenses()
+  const { expenses, loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
   const { showToast } = useToast()
 
   const [recommendation, setRecommendation] = useState(null)
@@ -284,7 +284,7 @@ export default function Dashboard() {
       )}
 
       {/* Advisor Chat */}
-      <AdvisorChat accounts={accounts} onUpdate={refetchAccounts} />
+      <AdvisorChat accounts={accounts} expenses={expenses} onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
 
       {/* Account sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

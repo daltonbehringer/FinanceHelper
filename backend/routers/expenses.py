@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -108,3 +108,61 @@ async def deactivate_expense(expense_id: int, user_id: int = Depends(get_current
         (expense_id, user_id),
     )
     return {"status": "deactivated"}
+
+
+class ExpensePayRequest(BaseModel):
+    source_account_id: Optional[int] = None
+    source_new_balance: Optional[float] = None
+    note: Optional[str] = None
+
+
+@router.post("/{expense_id}/pay")
+async def pay_expense(
+    expense_id: int, body: ExpensePayRequest, user_id: int = Depends(get_current_user)
+):
+    expense = fetchone(
+        "SELECT * FROM recurring_expenses WHERE id = ? AND user_id = ? AND is_active = 1",
+        (expense_id, user_id),
+    )
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    today = date.today().isoformat()
+
+    if expense["is_recurring"]:
+        # Recurring: record last paid date
+        execute(
+            "UPDATE recurring_expenses SET last_paid_date = ? WHERE id = ? AND user_id = ?",
+            (today, expense_id, user_id),
+        )
+    else:
+        # One-time: mark paid and deactivate
+        execute(
+            "UPDATE recurring_expenses SET last_paid_date = ?, is_active = 0 WHERE id = ? AND user_id = ?",
+            (today, expense_id, user_id),
+        )
+
+    # Deduct from source account if provided
+    if body.source_account_id is not None and body.source_new_balance is not None:
+        account = fetchone(
+            "SELECT id FROM accounts WHERE id = ? AND user_id = ?",
+            (body.source_account_id, user_id),
+        )
+        if not account:
+            raise HTTPException(status_code=404, detail="Source account not found")
+
+        execute(
+            """
+            INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (body.source_account_id, user_id, body.source_new_balance,
+             expense["amount"], body.note or f"Paid {expense['name']}", today),
+        )
+        execute(
+            "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
+            (body.source_new_balance, body.source_account_id, user_id),
+        )
+
+    updated = fetchone("SELECT * FROM recurring_expenses WHERE id = ?", (expense_id,))
+    return dict(updated)

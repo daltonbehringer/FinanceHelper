@@ -49,7 +49,7 @@ function RecommendationContent({ items }) {
   )
 }
 
-export default function AdvisorChat({ accounts, onUpdate }) {
+export default function AdvisorChat({ accounts, expenses = [], onUpdate, onExpenseUpdate }) {
   const { showToast } = useToast()
   const { settings } = useSettings()
 
@@ -59,6 +59,7 @@ export default function AdvisorChat({ accounts, onUpdate }) {
   const [error, setError] = useState('')
   const [manualAccountId, setManualAccountId] = useState('')
   const [manualSourceAccountId, setManualSourceAccountId] = useState('')
+  const [manualExpenseId, setManualExpenseId] = useState('')
   const [confirming, setConfirming] = useState(false)
 
   const hasDefaultPaymentAccount = !!settings.default_payment_account_id
@@ -87,6 +88,11 @@ export default function AdvisorChat({ accounts, onUpdate }) {
 
       if (data.type === 'question') {
         setResponse(data)
+      } else if (data.type === 'expense_payment') {
+        setResponse(data)
+        if (data.expense_id == null) {
+          setError('Could not identify the expense. Please select it below.')
+        }
       } else {
         // Balance update
         if (data.new_balance == null && data.payment_made == null) {
@@ -189,12 +195,64 @@ export default function AdvisorChat({ accounts, onUpdate }) {
     }
   }
 
+  async function handleConfirmExpensePayment() {
+    if (!response) return
+
+    const expenseId = response.expense_id ?? (manualExpenseId ? Number(manualExpenseId) : null)
+    if (!expenseId) {
+      setError('Please select an expense before confirming.')
+      return
+    }
+
+    // Resolve source account
+    let sourceAccountId = null
+    let sourceNewBalance = null
+
+    if (hasDefaultPaymentAccount) {
+      sourceAccountId = response.source_account_id
+      sourceNewBalance = response.source_new_balance
+    } else if (manualSourceAccountId) {
+      sourceAccountId = Number(manualSourceAccountId)
+      const sourceAcct = accounts.find(a => a.id === sourceAccountId)
+      if (sourceAcct) {
+        sourceNewBalance = (sourceAcct.current_balance ?? sourceAcct.balance) - response.amount
+      }
+    }
+
+    setConfirming(true)
+    try {
+      const resp = await apiFetch(`/api/expenses/${expenseId}/pay`, {
+        method: 'POST',
+        body: JSON.stringify({
+          source_account_id: sourceAccountId,
+          source_new_balance: sourceNewBalance,
+          note: response.note || '',
+        }),
+      })
+
+      if (!resp || !resp.ok) {
+        showToast('Failed to record expense payment', 'error')
+        return
+      }
+
+      showToast(`${response.expense_name} marked as paid`, 'success')
+      onUpdate?.()
+      onExpenseUpdate?.()
+      handleClear()
+    } catch {
+      showToast('Failed to record expense payment', 'error')
+    } finally {
+      setConfirming(false)
+    }
+  }
+
   function handleClear() {
     setText('')
     setResponse(null)
     setError('')
     setManualAccountId('')
     setManualSourceAccountId('')
+    setManualExpenseId('')
   }
 
   function getAccountName(id) {
@@ -226,9 +284,15 @@ export default function AdvisorChat({ accounts, onUpdate }) {
   // Show source account dropdown when: no default configured, target is debt, and a payment was made
   const showSourceDropdown = response
     && response.type !== 'question'
+    && response.type !== 'expense_payment'
     && !hasDefaultPaymentAccount
     && targetIsDebt
     && response.payment_made != null
+
+  // Show source dropdown for expense payments when no default configured
+  const showExpenseSourceDropdown = response
+    && response.type === 'expense_payment'
+    && !hasDefaultPaymentAccount
 
   return (
     <Card>
@@ -272,8 +336,110 @@ export default function AdvisorChat({ accounts, onUpdate }) {
           </div>
         )}
 
+        {/* Expense payment preview */}
+        {response && response.type === 'expense_payment' && (
+          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-4 space-y-3">
+            <h3 className="text-sm font-semibold text-green-900">Confirm Expense Payment</h3>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <span className="text-green-700">Expense</span>
+              <span className="font-medium text-green-900">
+                {response.expense_name || 'Not identified'}
+              </span>
+
+              <span className="text-green-700">Amount</span>
+              <span className="font-medium text-green-900">
+                {formatMoney(response.amount)}
+              </span>
+
+              {response.note && (
+                <>
+                  <span className="text-green-700">Note</span>
+                  <span className="text-green-900">{response.note}</span>
+                </>
+              )}
+            </div>
+
+            {/* Source account preview (when default payment account is configured) */}
+            {hasDefaultPaymentAccount && response.source_account_id != null && response.source_new_balance != null && (
+              <div className="mt-3 pt-3 border-t border-green-200">
+                <h4 className="text-xs font-semibold text-green-800 mb-2">Deducting From</h4>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <span className="text-green-700">Account</span>
+                  <span className="font-medium text-green-900">
+                    {getAccountName(response.source_account_id)}
+                  </span>
+                  <span className="text-green-700">New Balance</span>
+                  <span className="font-medium text-green-900">
+                    {formatMoney(response.source_new_balance)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Source account dropdown (when no default configured) */}
+            {showExpenseSourceDropdown && (
+              <div>
+                <label className="block text-xs font-medium text-green-800 mb-1">
+                  Deduct payment from
+                </label>
+                <select
+                  value={manualSourceAccountId}
+                  onChange={(e) => setManualSourceAccountId(e.target.value)}
+                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">None (don't deduct from any account)</option>
+                  {liquidAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({formatMoney(a.current_balance ?? a.balance)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Manual expense selection if expense_id is null */}
+            {response.expense_id == null && (
+              <div>
+                <label className="block text-xs font-medium text-green-800 mb-1">
+                  Select Expense
+                </label>
+                <select
+                  value={manualExpenseId}
+                  onChange={(e) => {
+                    setManualExpenseId(e.target.value)
+                    if (e.target.value) setError('')
+                  }}
+                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">Choose an expense...</option>
+                  {expenses.filter(e => e.is_active !== 0).map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} ({formatMoney(e.amount)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="success"
+                loading={confirming}
+                onClick={handleConfirmExpensePayment}
+              >
+                Confirm Payment
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleClear}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Balance update preview */}
-        {response && response.type !== 'question' && (
+        {response && response.type !== 'question' && response.type !== 'expense_payment' && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-4 space-y-3">
             <h3 className="text-sm font-semibold text-amber-900">Confirm Balance Update</h3>
 

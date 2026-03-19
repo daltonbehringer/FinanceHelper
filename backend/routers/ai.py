@@ -32,7 +32,7 @@ def _get_accounts_for_user(user_id: int) -> list[dict]:
                a.credit_limit, a.due_date, a.promo_rate, a.promo_end_date,
                COALESCE(
                    (SELECT s.balance FROM account_snapshots s
-                    WHERE s.account_id = a.id ORDER BY s.recorded_at DESC LIMIT 1),
+                    WHERE s.account_id = a.id ORDER BY s.id DESC LIMIT 1),
                    a.balance
                ) AS current_balance
         FROM accounts a
@@ -142,8 +142,9 @@ async def chat(body: ChatRequest, user_id: int = Depends(get_current_user)):
     system_prompt = f"""You are a personal finance advisor and assistant. Today's date: {today}.
 
 The user will send you a message. It could be:
-1. A balance update or payment (e.g. "paid $300 on Chase Sapphire", "Discover balance is now $1,850", "Made minimum payment on Amex from Chase Checking")
+1. A balance update or payment on a financial ACCOUNT (e.g. "paid $300 on Chase Sapphire", "Discover balance is now $1,850", "Made minimum payment on Amex from Chase Checking")
 2. A general question about their finances (e.g. "when is my next payment due?", "how much do I owe total?", "should I pay off my credit card or save?")
+3. An expense payment — paying a recurring bill or one-time expense (e.g. "pay pet insurance", "paid rent", "mark Netflix as paid")
 
 STEP 1: Determine the intent. Return ONLY valid JSON — no explanation, no markdown fencing.
 
@@ -184,6 +185,26 @@ If the message is a QUESTION or general inquiry, return:
   "type": "question",
   "answer": <string — your helpful, concise response>
 }}
+
+If the message is an EXPENSE PAYMENT (paying a recurring bill or one-time expense from the expenses list), return:
+{{
+  "type": "expense_payment",
+  "expense_id": <int or null>,
+  "expense_name": <string — the matched expense name>,
+  "amount": <float — the expense's stored amount>,
+  "source_account_id": <int or null>,
+  "source_new_balance": <float or null>,
+  "note": <string summarizing what was paid>
+}}
+
+Expense payment rules:
+- Match the user's message to one of the recurring or one-time expenses listed in the financial context below. Use fuzzy matching on the expense name.
+- IMPORTANT: Only use this intent for items in the EXPENSES list. If the user mentions paying a financial ACCOUNT (credit card, loan, etc.), use balance_update instead.
+- Use the expense's stored amount as the payment amount. If the user specifies a different amount, use theirs.
+- Set expense_id to null if the expense name is ambiguous or no match is found.
+- Apply the same source account rules as balance updates: use the DEFAULT PAYMENT ACCOUNT if configured, otherwise set source_account_id and source_new_balance to null.
+- Compute source_new_balance = source account's current_balance - amount.
+- If the expense has a last_paid_date in the current month, respond as a QUESTION instead warning that this expense was already paid this month and asking if they want to pay again.
 
 Answer rules:
 - Be specific: reference actual account names, balances, rates, and dates from the data.
@@ -296,7 +317,7 @@ def _get_income_for_user(user_id: int) -> list[dict]:
 
 def _get_expenses_for_user(user_id: int) -> list[dict]:
     rows = fetchall(
-        "SELECT id, name, amount, category, due_day, is_recurring, due_date FROM recurring_expenses WHERE user_id = ? AND is_active = 1",
+        "SELECT id, name, amount, category, due_day, is_recurring, due_date, last_paid_date FROM recurring_expenses WHERE user_id = ? AND is_active = 1",
         (user_id,),
     )
     return [dict(r) for r in rows]

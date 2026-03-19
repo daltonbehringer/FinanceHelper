@@ -123,6 +123,13 @@ def _migrate_expenses_one_time(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE recurring_expenses ADD COLUMN due_date TEXT")
 
 
+def _migrate_expenses_last_paid_date(conn: sqlite3.Connection):
+    """Add last_paid_date column to recurring_expenses."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(recurring_expenses)").fetchall()]
+    if cols and "last_paid_date" not in cols:
+        conn.execute("ALTER TABLE recurring_expenses ADD COLUMN last_paid_date TEXT")
+
+
 def _migrate_settings_default_payment(conn: sqlite3.Connection):
     """Add default_payment_account_id and payment_account_configured columns to user_settings."""
     row = conn.execute(
@@ -149,6 +156,7 @@ def init_db():
         _migrate_expenses_due_day(conn)
         _migrate_expenses_one_time(conn)
         _migrate_income_last_pay_date(conn)
+        _migrate_expenses_last_paid_date(conn)
         _migrate_settings_default_payment(conn)
 
     conn.executescript("""
@@ -195,7 +203,8 @@ def init_db():
             is_active     INTEGER NOT NULL DEFAULT 1,
             created_at    TEXT NOT NULL,
             is_recurring  INTEGER NOT NULL DEFAULT 1,
-            due_date      TEXT
+            due_date      TEXT,
+            last_paid_date TEXT
         );
 
         CREATE TABLE IF NOT EXISTS user_settings (
