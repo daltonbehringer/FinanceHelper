@@ -57,8 +57,12 @@ def _strip_markdown_fencing(text: str) -> str:
 def _get_user_settings(user_id: int) -> dict:
     row = fetchone("SELECT * FROM user_settings WHERE user_id = ?", (user_id,))
     result = dict(row) if row else {"min_checking": 0, "default_payment_account_id": None}
-    # Auto-detect: if no default payment account set and user has exactly one checking account
-    if not result.get("default_payment_account_id"):
+    payment_id = result.get("default_payment_account_id")
+    if payment_id is not None and payment_id < 0:
+        # Sentinel -1 means user explicitly chose "None" — respect that
+        result["default_payment_account_id"] = None
+    elif payment_id is None:
+        # NULL means never configured — auto-detect single checking account
         checking = fetchall(
             "SELECT id FROM accounts WHERE user_id = ? AND type = 'checking' AND is_active = 1",
             (user_id,),
