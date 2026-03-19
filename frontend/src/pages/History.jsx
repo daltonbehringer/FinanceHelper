@@ -1,219 +1,277 @@
 import { useState, useMemo } from 'react'
-import { apiFetch } from '../lib/api'
-import { formatMoney, formatDateTime } from '../lib/utils'
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from 'recharts'
+import { formatMoney, formatDate, isDebt } from '../lib/utils'
 import { useAccounts } from '../hooks/useAccounts'
 import { useSnapshots } from '../hooks/useSnapshots'
-import { useToast } from '../context/ToastContext'
-import { Select } from '../components/ui/Input'
-import Button from '../components/ui/Button'
 import Card, { CardBody } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import Spinner from '../components/ui/Spinner'
-import ConfirmDialog from '../components/ui/ConfirmDialog'
 
-const MAX_VERSIONS = 10
+const RANGES = [
+  { key: '1m', label: '1M', days: 30 },
+  { key: '3m', label: '3M', days: 91 },
+  { key: '6m', label: '6M', days: 182 },
+  { key: '1y', label: '1Y', days: 365 },
+  { key: '5y', label: '5Y', days: 1826 },
+]
+
+// Consistent color palette for chart lines
+const COLORS = [
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
+  '#e11d48', '#84cc16', '#a855f7', '#0ea5e9', '#d946ef',
+]
+
+function getDateNDaysAgo(n) {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString().split('T')[0]
+}
+
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg">
+      <p className="text-xs font-medium text-gray-500 mb-1">{formatDate(label)}</p>
+      {payload.map((entry) => (
+        <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-gray-700">{entry.name}</span>
+          <span className="font-semibold text-gray-900 ml-auto pl-3">
+            {formatMoney(entry.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function History() {
-  const [selectedAccountId, setSelectedAccountId] = useState(null)
-  const [confirmRestore, setConfirmRestore] = useState(null)
-  const [restoring, setRestoring] = useState(false)
+  const [range, setRange] = useState('1y')
+  const [filter, setFilter] = useState('all') // 'all' | 'assets' | 'debts' | account id
 
-  const { accounts } = useAccounts()
-  const { snapshots, loading, refetch } = useSnapshots(selectedAccountId)
-  const { showToast } = useToast()
+  const { accounts, loading: accountsLoading } = useAccounts()
+  const { snapshots, loading: snapshotsLoading } = useSnapshots()
+  const loading = accountsLoading || snapshotsLoading
 
-  // Group snapshots by account and assign version numbers (oldest = v1)
-  // Then take only the last MAX_VERSIONS per account
-  const versionedSnapshots = useMemo(() => {
-    // Group by account_id
+  // Determine which accounts are visible based on filter
+  const visibleAccounts = useMemo(() => {
+    if (filter === 'all') return accounts
+    if (filter === 'assets') return accounts.filter((a) => !isDebt(a.type))
+    if (filter === 'debts') return accounts.filter((a) => isDebt(a.type))
+    // Individual account id
+    const id = Number(filter)
+    return accounts.filter((a) => a.id === id)
+  }, [accounts, filter])
+
+  const visibleIds = useMemo(() => new Set(visibleAccounts.map((a) => a.id)), [visibleAccounts])
+
+  // Build chart data: one data point per date with a key per visible account
+  const chartData = useMemo(() => {
+    if (!snapshots.length || !visibleAccounts.length) return []
+
+    const selectedRange = RANGES.find((r) => r.key === range)
+    const startDate = getDateNDaysAgo(selectedRange.days)
+    const today = new Date().toISOString().split('T')[0]
+
+    // Build a map: accountId -> sorted [{date, balance}]
     const byAccount = {}
     for (const snap of snapshots) {
-      if (!byAccount[snap.account_id]) byAccount[snap.account_id] = []
-      byAccount[snap.account_id].push(snap)
-    }
-
-    // Snapshots come newest-first from API. Reverse to assign versions oldest=v1.
-    const result = []
-    for (const accountId of Object.keys(byAccount)) {
-      const accountSnaps = byAccount[accountId]
-      const reversed = [...accountSnaps].reverse() // oldest first
-      const total = reversed.length
-      // Take only last MAX_VERSIONS (most recent)
-      const startIdx = Math.max(0, total - MAX_VERSIONS)
-      for (let i = startIdx; i < total; i++) {
-        result.push({
-          ...reversed[i],
-          version: i + 1,
-          isLatest: i === total - 1,
-        })
+      if (!visibleIds.has(snap.account_id)) continue
+      const date = snap.recorded_at.split('T')[0] // handle both date-only and datetime
+      if (!byAccount[snap.account_id]) byAccount[snap.account_id] = {}
+      // Keep the latest balance per date per account (snapshots are newest-first,
+      // so the first one we see for a date is the latest)
+      if (!byAccount[snap.account_id][date]) {
+        byAccount[snap.account_id][date] = snap.balance
       }
     }
 
-    // Sort by recorded_at descending (newest first) for display
-    result.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))
-    return result
-  }, [snapshots])
-
-  function handleFilterChange(e) {
-    const val = e.target.value
-    setSelectedAccountId(val === '' ? null : Number(val))
-  }
-
-  async function handleRestore() {
-    if (!confirmRestore) return
-    setRestoring(true)
-    try {
-      const resp = await apiFetch(`/api/snapshots/${confirmRestore}/restore`, {
-        method: 'POST',
-      })
-      if (resp && resp.ok) {
-        showToast('Rolled back successfully', 'success')
-        refetch()
-      } else {
-        const data = resp ? await resp.json().catch(() => null) : null
-        showToast(data?.detail || 'Failed to rollback', 'error')
+    // Collect all unique dates within range, plus start boundary and today
+    const dateSet = new Set()
+    dateSet.add(startDate)
+    dateSet.add(today)
+    for (const accountDates of Object.values(byAccount)) {
+      for (const d of Object.keys(accountDates)) {
+        if (d >= startDate && d <= today) dateSet.add(d)
       }
-    } catch {
-      showToast('Failed to rollback', 'error')
-    } finally {
-      setRestoring(false)
-      setConfirmRestore(null)
     }
-  }
+    const allDates = [...dateSet].sort()
 
-  const restoreSnap = confirmRestore
-    ? versionedSnapshots.find((s) => s.id === confirmRestore)
-    : null
+    // For each account, find the last known balance before startDate (carry-forward seed)
+    const lastKnown = {}
+    for (const acct of visibleAccounts) {
+      // Snapshots are newest-first; find the latest one on or before startDate
+      const snapsForAcct = snapshots.filter((s) => s.account_id === acct.id)
+      let seed = acct.balance // fallback to accounts.balance
+      for (const s of snapsForAcct) {
+        const d = s.recorded_at.split('T')[0]
+        if (d <= startDate) {
+          seed = s.balance
+          break // newest-first, so first match <= startDate is the latest before range
+        }
+      }
+      lastKnown[acct.id] = seed
+    }
+
+    // Build data points with carry-forward
+    const data = []
+    const current = { ...lastKnown }
+    for (const date of allDates) {
+      const point = { date }
+      for (const acct of visibleAccounts) {
+        if (byAccount[acct.id]?.[date] != null) {
+          current[acct.id] = byAccount[acct.id][date]
+        }
+        point[acct.name] = current[acct.id] ?? null
+      }
+      data.push(point)
+    }
+
+    return data
+  }, [snapshots, visibleAccounts, visibleIds, range])
+
+  // Assign colors to visible accounts (stable order by account id)
+  const accountColors = useMemo(() => {
+    const map = {}
+    const sorted = [...accounts].sort((a, b) => a.id - b.id)
+    sorted.forEach((a, i) => {
+      map[a.name] = COLORS[i % COLORS.length]
+    })
+    return map
+  }, [accounts])
+
+  const hasData = chartData.length > 1
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Version History</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Last {MAX_VERSIONS} updates per account
-          </p>
-        </div>
-        <Select
-          label="Filter by account"
-          className="sm:w-64"
-          value={selectedAccountId ?? ''}
-          onChange={handleFilterChange}
-        >
-          <option value="">All Accounts</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Balance History</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Track your account balances over time.
+        </p>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Spinner size="lg" className="text-accent" />
         </div>
-      ) : versionedSnapshots.length === 0 ? (
-        <Card>
-          <EmptyState
-            title="No history yet"
-            description="Version history will appear here as you update your accounts."
-          />
-        </Card>
       ) : (
-        <div className="space-y-3">
-          {versionedSnapshots.map((snap) => (
-            <Card
-              key={snap.id}
-              className={`transition-colors ${
-                snap.isLatest
-                  ? 'ring-2 ring-accent/30 bg-accent/[0.02]'
-                  : 'hover:bg-gray-50/50'
-              }`}
+        <>
+          {/* Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            {/* Time range buttons */}
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    range === r.key
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Account filter */}
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none sm:ml-auto"
             >
-              <CardBody className="p-4 sm:p-5">
-                <div className="flex items-start justify-between gap-3">
-                  {/* Left: version info */}
-                  <div className="min-w-0 flex-1 space-y-2">
-                    {/* Version + account + badge */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-xs font-bold text-gray-700 tabular-nums">
-                        v{snap.version}
-                      </span>
-                      <span className="font-semibold text-gray-900 text-sm">
-                        {snap.account_name}
-                      </span>
-                      {snap.isLatest && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-green-100 text-[10px] font-semibold text-green-700 uppercase tracking-wide">
-                          Current
-                        </span>
-                      )}
-                    </div>
+              <option value="all">All Accounts</option>
+              <option value="assets">Assets</option>
+              <option value="debts">Debts</option>
+              <optgroup label="Individual">
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
 
-                    {/* Timestamp */}
-                    <p className="text-xs text-gray-400">
-                      {formatDateTime(snap.recorded_at)}
-                    </p>
-
-                    {/* Balance + payment details */}
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-gray-700">
-                        Balance: <span className="font-semibold">{formatMoney(snap.balance)}</span>
-                      </span>
-                      {snap.payment_made != null && snap.payment_made !== 0 && (
-                        <span className="text-gray-500">
-                          Payment: <span className="font-medium">{formatMoney(snap.payment_made)}</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Note */}
-                    {snap.note && (
-                      <p className="text-xs text-gray-500 italic">
-                        &ldquo;{snap.note}&rdquo;
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Right: rollback button */}
-                  <div className="flex-shrink-0">
-                    {snap.isLatest ? (
-                      <span className="text-xs text-gray-400 hidden sm:block">Latest</span>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfirmRestore(snap.id)}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-                          </svg>
-                          Rollback
-                        </span>
-                      </Button>
-                    )}
-                  </div>
+          {/* Chart */}
+          <Card>
+            <CardBody className="p-4 sm:p-6">
+              {!hasData ? (
+                <EmptyState
+                  title="No balance data"
+                  description="Update your account balances to see them charted over time."
+                />
+              ) : (
+                <div className="h-80 sm:h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11, fill: '#9ca3af' }}
+                        tickFormatter={(d) => {
+                          const [, m, day] = d.split('-')
+                          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                          return `${months[Number(m) - 1]} ${Number(day)}`
+                        }}
+                        interval="preserveStartEnd"
+                        minTickGap={40}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: '#9ca3af' }}
+                        tickFormatter={(v) =>
+                          v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
+                        }
+                        width={55}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      {visibleAccounts.map((acct) => (
+                        <Line
+                          key={acct.id}
+                          type="stepAfter"
+                          dataKey={acct.name}
+                          stroke={accountColors[acct.name]}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, strokeWidth: 0 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
-      )}
+              )}
+            </CardBody>
+          </Card>
 
-      <ConfirmDialog
-        isOpen={confirmRestore !== null}
-        onClose={() => setConfirmRestore(null)}
-        onConfirm={handleRestore}
-        title="Rollback to previous version"
-        message={
-          restoreSnap
-            ? `Roll back "${restoreSnap.account_name}" to v${restoreSnap.version} (${formatMoney(restoreSnap.balance)})? All newer versions for this account will be removed.`
-            : 'Roll back to this version? All newer versions will be removed.'
-        }
-        confirmText={restoring ? 'Rolling back...' : 'Rollback'}
-        variant="danger"
-      />
+          {/* Legend */}
+          {hasData && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-1">
+              {visibleAccounts.map((acct) => (
+                <div key={acct.id} className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <span
+                    className="inline-block w-3 h-0.5 rounded-full"
+                    style={{ backgroundColor: accountColors[acct.name] }}
+                  />
+                  {acct.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

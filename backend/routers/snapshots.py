@@ -69,13 +69,13 @@ async def create_snapshot(body: SnapshotCreate, user_id: int = Depends(get_curre
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    now = datetime.utcnow().isoformat()
+    today = date.today().isoformat()
     execute(
         """
         INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (body.account_id, user_id, body.balance, body.payment_made, body.note, now),
+        (body.account_id, user_id, body.balance, body.payment_made, body.note, today),
     )
     # Also update accounts.balance for consistency
     execute(
@@ -132,3 +132,40 @@ async def restore_snapshot(snapshot_id: int, user_id: int = Depends(get_current_
     )
 
     return {"status": "restored", "balance": original["balance"]}
+
+
+@router.delete("/{snapshot_id}")
+async def delete_snapshot(snapshot_id: int, user_id: int = Depends(get_current_user)):
+    target = fetchone(
+        "SELECT * FROM account_snapshots WHERE id = ? AND user_id = ?",
+        (snapshot_id, user_id),
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    account_id = target["account_id"]
+
+    # Delete the snapshot
+    execute(
+        "DELETE FROM account_snapshots WHERE id = ? AND user_id = ?",
+        (snapshot_id, user_id),
+    )
+
+    # Revert account balance to the most recent remaining snapshot, or original balance
+    prev = fetchone(
+        "SELECT balance FROM account_snapshots WHERE account_id = ? AND user_id = ? ORDER BY recorded_at DESC, id DESC LIMIT 1",
+        (account_id, user_id),
+    )
+    if prev:
+        execute(
+            "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
+            (prev["balance"], account_id, user_id),
+        )
+    else:
+        # No snapshots remain — reset to 0
+        execute(
+            "UPDATE accounts SET balance = 0 WHERE id = ? AND user_id = ?",
+            (account_id, user_id),
+        )
+
+    return {"status": "deleted"}
