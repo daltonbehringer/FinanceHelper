@@ -49,7 +49,7 @@ export default function Sidebar({ open, onClose }) {
       </nav>
 
       <div className="p-4 border-t border-navy-light">
-        <p className="text-xs text-gray-500 text-center">Finance AI v1</p>
+        <p className="text-xs text-gray-500 text-center">Finance AI v1.2</p>
       </div>
     </aside>
   )
