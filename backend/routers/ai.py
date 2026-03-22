@@ -471,7 +471,7 @@ BUDGET BREAKDOWN (use these exact numbers):
   {reserve_label}
   MAXIMUM safe amount for extra debt payments: ${max_safe:,.2f}
 
-CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it.{f" The user has set a checking account floor of ${min_checking:,.2f} — never recommend actions that would drop their checking balance below this amount." if min_checking > 0 else " Always remind the user to maintain an emergency buffer for untracked variable costs."}
+CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it.{f" The user has set a checking account floor of ${min_checking:,.2f} — never recommend actions that would drop their checking balance below this amount. You MUST state this floor amount in your response so the user can see it was respected." if min_checking > 0 else " Always remind the user to maintain an emergency buffer for untracked variable costs."}
 """
 
     system_prompt = f"""You are a personal finance advisor helping with budgeting decisions. Today's date: {today}.
@@ -482,7 +482,7 @@ Your response MUST follow this exact structure:
 
 2) PRIORITY ORDER — List each debt account in recommended payoff order using the debt avalanche method (highest interest rate first). For each, state the account name, current balance, interest rate, and reasoning for its rank.
 
-3) THIS MONTH'S ACTION PLAN — First, list every recurring expense and bill that must be paid (rent, subscriptions, insurance, etc.) with their amounts. Then list minimum debt payments. Only AFTER all of those are accounted for, recommend extra debt payments to pay off debt from the remaining safe amount. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). The total of all payments (expenses + minimums + extra) must not exceed income. Time the payments around the user's payday — do not recommend paying before income arrives. Always respect the user's minimum checking balance from their settings.
+3) THIS MONTH'S ACTION PLAN — First, if the user has a checking account floor set, state it explicitly (e.g. "Checking floor: $500 — all recommendations keep your balance above this amount"). Then list every recurring expense and bill that must be paid (rent, subscriptions, insurance, etc.) with their amounts. Then list minimum debt payments. Only AFTER all of those are accounted for, recommend extra debt payments to pay off debt from the remaining safe amount. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). The total of all payments (expenses + minimums + extra) must not exceed income. Time the payments around the user's payday — do not recommend paying before income arrives. Always respect the user's minimum checking balance from their settings.
 
 4) NEXT STEPS — A list of action items to achieve before and after the next paycheck (e.g. "Before next payday: call lender about rate reduction. After next payday: redirect $200/mo from paid-off Account X to Account Y").
 
