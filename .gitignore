@@ -5,7 +5,7 @@ finance.db
 .venv/
 .claude/settings.local.json
 CLAUDE.md
-finance.db.bak
 tasks/lessons.md
 frontend/node_modules/
 frontend/dist/
+.claude/*
