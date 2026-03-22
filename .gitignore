@@ -9,3 +9,4 @@ tasks/lessons.md
 frontend/node_modules/
 frontend/dist/
 .claude/*
+tests/*
