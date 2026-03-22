@@ -136,7 +136,7 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
 
 @router.post("/chat")
 async def chat(body: ChatRequest, user_id: int = Depends(get_current_user)):
-    _, financial_context = _build_financial_context(user_id)
+    accounts, financial_context = _build_financial_context(user_id)
     today = date.today().isoformat()
 
     system_prompt = f"""You are a personal finance advisor and assistant. Today's date: {today}.
@@ -168,7 +168,14 @@ Balance update rules:
 - Set new_balance to null ONLY if no balance can be determined.
 - If the user says they made a payment but does NOT state a new balance, compute new_balance based on the account type:
   - REVOLVING DEBT (credit_card, line_of_credit): new_balance = current_balance - payment_made. Set interest_portion and principal_portion to null.
-  - INSTALLMENT DEBT (loan, mortgage): Part of each payment goes to interest. Compute: monthly_interest = current_balance * (interest_rate / 100 / 12). Then principal_paid = payment_made - monthly_interest. Then new_balance = current_balance - principal_paid. Set interest_portion = monthly_interest (rounded to 2 decimals) and principal_portion = principal_paid (rounded to 2 decimals). If interest_rate is 0, treat the same as revolving debt. If payment_made <= monthly_interest, set new_balance = current_balance, principal_portion = 0, and interest_portion = payment_made.
+  - INSTALLMENT DEBT (loan, mortgage): Part of each payment covers interest; only the remainder reduces the balance. Follow these steps exactly:
+    Step 1: monthly_interest = current_balance * interest_rate / 100 / 12  (round to 2 decimals)
+    Step 2: principal_paid  = payment_made - monthly_interest              (round to 2 decimals)
+    Step 3: new_balance     = current_balance - principal_paid             (NOT current_balance - payment_made)
+    Step 4: Set interest_portion = monthly_interest, principal_portion = principal_paid
+    IMPORTANT: new_balance must equal current_balance minus ONLY the principal_paid, NOT minus the full payment_made. The interest portion does NOT reduce the balance.
+    Example: balance=$10,000, rate=6%, payment=$500 → interest=$10000*6/100/12=$50.00, principal=$500-$50=$450.00, new_balance=$10000-$450=$9550.00 (NOT $9500).
+    If interest_rate is 0, treat the same as revolving debt. If payment_made <= monthly_interest, set new_balance = current_balance, principal_portion = 0, and interest_portion = payment_made.
   - NON-DEBT accounts: new_balance = current_balance - payment_made. Set interest_portion and principal_portion to null.
 - For installment debt payments, include the interest/principal breakdown in the note field (e.g. "Paid $600 on Car Loan — $97.50 interest, $502.50 principal").
 
@@ -233,6 +240,62 @@ Answer rules:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="AI returned invalid JSON")
+
+    # Server-side recomputation for ALL payment arithmetic.
+    # LLMs are unreliable at arithmetic, so we recompute every derived
+    # balance using exact Python math, overriding the LLM's values.
+    # The LLM still handles intent detection, account matching, and notes.
+    if parsed.get("type") == "balance_update" and parsed.get("payment_made") is not None:
+        payment = parsed["payment_made"]
+
+        # Recompute target account new_balance
+        if parsed.get("account_id") is not None:
+            acct = next(
+                (a for a in accounts if a["id"] == parsed["account_id"]), None
+            )
+            if acct:
+                current = acct["current_balance"]
+                if acct["type"] in ("loan", "mortgage"):
+                    rate = acct.get("interest_rate") or 0
+                    if rate > 0 and payment > 0:
+                        monthly_interest = round(current * rate / 100 / 12, 2)
+                        if payment <= monthly_interest:
+                            parsed["new_balance"] = current
+                            parsed["interest_portion"] = payment
+                            parsed["principal_portion"] = 0
+                        else:
+                            principal_paid = round(payment - monthly_interest, 2)
+                            parsed["new_balance"] = round(current - principal_paid, 2)
+                            parsed["interest_portion"] = monthly_interest
+                            parsed["principal_portion"] = principal_paid
+                    else:
+                        # 0% installment debt — treat like revolving
+                        parsed["new_balance"] = round(current - payment, 2)
+                else:
+                    # Revolving debt, non-debt, or any other type: simple subtraction
+                    parsed["new_balance"] = round(current - payment, 2)
+
+        # Recompute source account new_balance
+        if parsed.get("source_account_id") is not None:
+            source_acct = next(
+                (a for a in accounts if a["id"] == parsed["source_account_id"]), None
+            )
+            if source_acct:
+                parsed["source_new_balance"] = round(
+                    source_acct["current_balance"] - payment, 2
+                )
+
+    elif parsed.get("type") == "expense_payment":
+        # Recompute source account balance for expense payments
+        amount = parsed.get("amount")
+        if parsed.get("source_account_id") is not None and amount is not None:
+            source_acct = next(
+                (a for a in accounts if a["id"] == parsed["source_account_id"]), None
+            )
+            if source_acct:
+                parsed["source_new_balance"] = round(
+                    source_acct["current_balance"] - amount, 2
+                )
 
     return parsed
 
