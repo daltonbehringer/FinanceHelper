@@ -461,6 +461,16 @@ Estimated monthly income is post-tax.
             else f"20% essential reserve (groceries, gas, medical, etc.): ${reserve:,.2f}"
         )
         max_safe = max(0, disposable - reserve)
+        surplus_label = (
+            f"MAXIMUM safe amount for extra debt payments: ${max_safe:,.2f}"
+            if min_payments > 0
+            else f"SURPLUS available for savings/investments: ${max_safe:,.2f}"
+        )
+        critical_debt_line = (
+            " Only recommend extra debt payments from the maximum safe amount. Never exceed it."
+            if min_payments > 0
+            else " Since the user has no debt, recommend allocating the surplus toward savings, emergency fund, and investments."
+        )
         disposable_note = f"""
 BUDGET BREAKDOWN (use these exact numbers):
   Monthly income: ${monthly_income:,.2f}
@@ -469,9 +479,9 @@ BUDGET BREAKDOWN (use these exact numbers):
   Subtotal obligations: ${monthly_expenses + min_payments:,.2f}
   Remaining after obligations: ${disposable:,.2f}
   {reserve_label}
-  MAXIMUM safe amount for extra debt payments: ${max_safe:,.2f}
+  {surplus_label}
 
-CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan. Only recommend extra debt payments from the maximum safe amount. Never exceed it.{f" The user has set a checking account floor of ${min_checking:,.2f} — never recommend actions that would drop their checking balance below this amount. You MUST state this floor amount in your response so the user can see it was respected." if min_checking > 0 else " Always remind the user to maintain an emergency buffer for untracked variable costs."}
+CRITICAL: Every recurring expense listed above (rent, insurance, subscriptions, etc.) MUST be paid first — these are non-negotiable. You must explicitly mention each one by name in your action plan.{critical_debt_line}{f" The user has set a checking account floor of ${min_checking:,.2f} — never recommend actions that would drop their checking balance below this amount. You MUST state this floor amount in your response so the user can see it was respected." if min_checking > 0 else " Always remind the user to maintain an emergency buffer for untracked variable costs."}
 """
 
     system_prompt = f"""You are a personal finance advisor helping with budgeting decisions. Today's date: {today}.
@@ -480,11 +490,11 @@ Your response MUST follow this exact structure:
 
 1) INCOME AND TIMING — State the user's next scheduled payday(s) with dates and amounts (use the pre-computed next_payday fields). List EVERY upcoming bill and recurring expense by name, amount, and due date (use the next_due_date fields). The user must see a complete picture of what's owed before any extra debt payments are suggested.
 
-2) PRIORITY ORDER — List each debt account in recommended payoff order using the debt avalanche method (highest interest rate first). For each, state the account name, current balance, interest rate, and reasoning for its rank.
+2) PRIORITY ORDER — List each debt account in recommended payoff order using the debt avalanche method (highest interest rate first). For each, state the account name, current balance, interest rate, and reasoning for its rank. If the user has NO active debt, skip this section and congratulate them. Instead, recommend savings or investment priorities.
 
-3) THIS MONTH'S ACTION PLAN — First, if the user has a checking account floor set, state it explicitly (e.g. "Checking floor: $500 — all recommendations keep your balance above this amount"). Then list every recurring expense and bill that must be paid (rent, subscriptions, insurance, etc.) with their amounts. Then list minimum debt payments. Only AFTER all of those are accounted for, recommend extra debt payments to pay off debt from the remaining safe amount. Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire"). The total of all payments (expenses + minimums + extra) must not exceed income. Time the payments around the user's payday — do not recommend paying before income arrives. Always respect the user's minimum checking balance from their settings.
+3) THIS MONTH'S ACTION PLAN — First, if the user has a checking account floor set, state it explicitly (e.g. "Checking floor: $500 — all recommendations keep your balance above this amount"). Then list every recurring expense and bill that must be paid (rent, subscriptions, insurance, etc.) with their amounts. Then list minimum debt payments. Only AFTER all of those are accounted for, recommend extra debt payments to pay off debt from the remaining safe amount. If the user has no debt, recommend how to allocate the surplus (emergency fund, retirement contributions, investment accounts, etc.). Every action must be a concrete number (e.g. "Pay $350 toward Chase Sapphire" or "Transfer $500 to savings"). The total of all payments must not exceed income. Time the payments around the user's payday — do not recommend paying before income arrives. Always respect the user's minimum checking balance from their settings.
 
-4) NEXT STEPS — A list of action items to achieve before and after the next paycheck (e.g. "Before next payday: call lender about rate reduction. After next payday: redirect $200/mo from paid-off Account X to Account Y").
+4) NEXT STEPS — A list of action items to achieve before and after the next paycheck (e.g. "Before next payday: call lender about rate reduction. After next payday: redirect $200/mo from paid-off Account X to Account Y"). For debt-free users, suggest wealth-building goals.
 
 Formatting rules:
 - Be concise — use short bullet points, not lengthy paragraphs.
