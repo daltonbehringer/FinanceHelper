@@ -51,7 +51,7 @@ export default function OverflowMenu({ items }) {
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+        className="p-2.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
       >
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
@@ -65,14 +65,14 @@ export default function OverflowMenu({ items }) {
           style={{
             top: pos.direction === 'up' ? undefined : pos.top,
             bottom: pos.direction === 'up' ? window.innerHeight - pos.top + 4 : undefined,
-            left: Math.max(8, pos.left),
+            left: Math.max(8, Math.min(pos.left, window.innerWidth - 152)),
           }}
         >
           {items.map((item, i) => (
             <button
               key={i}
               onClick={() => { setOpen(false); item.onClick() }}
-              className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+              className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                 item.danger
                   ? 'text-red-600 hover:bg-red-50'
                   : 'text-gray-700 hover:bg-gray-50'

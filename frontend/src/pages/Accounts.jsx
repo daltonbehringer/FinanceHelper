@@ -425,7 +425,7 @@ export default function Accounts() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">

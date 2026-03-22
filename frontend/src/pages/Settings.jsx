@@ -95,7 +95,7 @@ export default function Settings() {
               <select
                 value={defaultPaymentAccountId}
                 onChange={(e) => setDefaultPaymentAccountId(e.target.value)}
-                className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                className="w-full sm:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
               >
                 <option value="">None (ask every time)</option>
                 {checkingAccounts.map((a) => (
@@ -125,7 +125,7 @@ export default function Settings() {
               placeholder="e.g. 1500"
               value={minChecking}
               onChange={(e) => setMinChecking(e.target.value)}
-              className="flex-1 max-w-xs"
+              className="flex-1 sm:max-w-xs"
             />
           </CardBody>
         </Card>

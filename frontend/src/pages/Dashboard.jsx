@@ -173,7 +173,8 @@ export default function Dashboard() {
       <head>
         <title>Financial Recommendation</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; color: #111; line-height: 1.6; }
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; color: #111; line-height: 1.6; }
+          @media (min-width: 640px) { body { padding: 40px; } }
           h1 { font-size: 20px; margin-bottom: 24px; }
           pre { white-space: pre-wrap; font-family: inherit; font-size: 14px; }
         </style>
