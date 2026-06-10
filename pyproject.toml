@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# test_llm_trace.py hits the real Anthropic API and is a manual script, not a
+# unit test — exclude it from collection so CI never makes paid network calls.
+addopts = "--ignore=tests/test_llm_trace.py"

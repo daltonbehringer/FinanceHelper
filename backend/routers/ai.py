@@ -3,11 +3,12 @@ import os
 from datetime import date, timedelta
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
 from backend.db import fetchall, fetchone
+from backend.rate_limit import limiter
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -135,7 +136,8 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
 
 
 @router.post("/chat")
-async def chat(body: ChatRequest, user_id: int = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def chat(request: Request, body: ChatRequest, user_id: int = Depends(get_current_user)):
     accounts, financial_context = _build_financial_context(user_id)
     today = date.today().isoformat()
 
@@ -301,10 +303,11 @@ Answer rules:
 
 
 @router.post("/parse-update")
-async def parse_update(body: ParseUpdateRequest, user_id: int = Depends(get_current_user)):
-    """Backwards-compatible endpoint — delegates to /chat."""
+async def parse_update(request: Request, body: ParseUpdateRequest, user_id: int = Depends(get_current_user)):
+    """Backwards-compatible endpoint — delegates to /chat (and inherits its
+    rate limit transitively, since the call goes through the limited chat())."""
     chat_req = ChatRequest(text=body.text)
-    result = await chat(chat_req, user_id)
+    result = await chat(request, chat_req, user_id)
     if result.get("type") == "question":
         # Old endpoint only expects balance updates, return empty parse
         return {"account_id": None, "new_balance": None, "payment_made": None, "note": result.get("answer", "")}
@@ -387,7 +390,8 @@ def _get_expenses_for_user(user_id: int) -> list[dict]:
 
 
 @router.post("/recommend")
-async def recommend(user_id: int = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def recommend(request: Request, user_id: int = Depends(get_current_user)):
     accounts = _get_accounts_for_user(user_id)
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)

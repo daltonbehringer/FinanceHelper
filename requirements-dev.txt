@@ -1,0 +1,5 @@
+# Dev/test dependencies (not installed in the Railway runtime image).
+-r requirements.txt
+pytest
+httpx        # required by fastapi.testclient.TestClient
+anyio

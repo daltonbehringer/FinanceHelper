@@ -8,7 +8,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch('/auth/me')
+    apiFetch('/api/auth/me')
       .then(resp => {
         if (resp && resp.ok) return resp.json()
         return null
@@ -21,10 +21,10 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = async () => {
-    await apiFetch('/auth/logout', { method: 'POST' })
-    document.cookie = 'stytch_session=; Max-Age=0; path=/'
+    // The server revokes the session and clears the HttpOnly cookie.
+    await apiFetch('/api/auth/logout', { method: 'POST' })
     const apiBase = import.meta.env.VITE_API_BASE_URL || ''
-    window.location.href = apiBase + '/auth/login'
+    window.location.href = apiBase + '/api/auth/login'
   }
 
   if (loading) {

@@ -7,11 +7,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 load_dotenv()
 
 from backend.auth import router as auth_router
 from backend.db import init_db
+from backend.rate_limit import limiter
 from backend.routers.accounts import router as accounts_router
 from backend.routers.ai import router as ai_router
 from backend.routers.expenses import router as expenses_router
@@ -30,8 +34,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Rate limiting (per-session) for the AI endpoints — see backend/rate_limit.py.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# Exact origins only (no wildcard) since we send credentialed cookies.
+_cors_origins = [
+    "https://finance.dalty.io",   # production frontend
+    "http://localhost:3000",      # Vite dev server
+    "http://localhost:8000",      # backend serving the built SPA
+]
 _frontend_url = os.getenv("FRONTEND_URL", "")
-_cors_origins = ["http://localhost:8000", "http://localhost:3000"]
 if _frontend_url and _frontend_url not in _cors_origins:
     _cors_origins.append(_frontend_url)
 

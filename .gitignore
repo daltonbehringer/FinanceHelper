@@ -9,4 +9,7 @@ tasks/lessons.md
 frontend/node_modules/
 frontend/dist/
 .claude/*
-tests/*
+# Commit test source (needed for CI) but ignore DB artifacts the tests create.
+tests/__pycache__/
+*.db
+PHASE0-FINDINGS.md

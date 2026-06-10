@@ -2,4 +2,6 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+# Litestream restores the DB from R2 (if present) and continuously replicates
+# while uvicorn runs. DB_PATH must point at the Railway volume (/data/finance.db).
+startCommand = "litestream replicate -config litestream.yml -exec \"uvicorn backend.main:app --host 0.0.0.0 --port $PORT\""
