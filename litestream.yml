@@ -1,0 +1,22 @@
+# Litestream configuration — streams the SQLite DB to Cloudflare R2.
+#
+# Env vars (set on Railway — see docs/litestream.md):
+#   DB_PATH                       canonical DB location (prod: /data/finance.db)
+#   LITESTREAM_REPLICA_BUCKET     R2 bucket name
+#   LITESTREAM_REPLICA_ENDPOINT   https://<account-id>.r2.cloudflarestorage.com
+#   LITESTREAM_ACCESS_KEY_ID      R2 access key id
+#   LITESTREAM_SECRET_ACCESS_KEY  R2 secret access key
+#
+# Litestream expands ${...} from the environment when it reads this file.
+
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_REPLICA_BUCKET}
+        path: finance.db
+        endpoint: ${LITESTREAM_REPLICA_ENDPOINT}
+        region: auto
+        force-path-style: true
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}

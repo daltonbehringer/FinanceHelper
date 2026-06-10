@@ -2,7 +2,15 @@ import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(os.getenv("DATABASE_PATH", Path(__file__).resolve().parent.parent / "finance.db"))
+# Single source of truth for the database location.
+# DB_PATH is the canonical env var (Phase 0). DATABASE_PATH is kept as a
+# deprecated fallback so the existing tests/test_llm_trace.py script keeps working.
+# Default ./finance.db at repo root for local dev; production sets DB_PATH=/data/finance.db.
+DB_PATH = Path(
+    os.getenv("DB_PATH")
+    or os.getenv("DATABASE_PATH")
+    or (Path(__file__).resolve().parent.parent / "finance.db")
+)
 
 
 def get_db() -> sqlite3.Connection:
