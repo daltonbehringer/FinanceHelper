@@ -16,7 +16,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x /app/entrypoint.sh
 
-# Litestream continuously replicates the SQLite DB (DB_PATH=/data/finance.db) to
-# R2 while uvicorn runs. Shell form so $PORT expands at runtime.
-CMD litestream replicate -config litestream.yml -exec "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+# entrypoint.sh always starts uvicorn; it runs Litestream alongside only when R2
+# is configured, so backup/replication issues can't take the API down.
+CMD ["/app/entrypoint.sh"]
