@@ -2,9 +2,10 @@
 
 The SQLite database (`DB_PATH`, prod `/data/finance.db`) is continuously
 replicated to Cloudflare R2 by [Litestream](https://litestream.io). Config lives
-in [`litestream.yml`](../litestream.yml); the binary is installed in the Railway
-build by [`nixpacks.toml`](../nixpacks.toml); the start command wraps uvicorn in
-[`railway.toml`](../railway.toml).
+in [`litestream.yml`](../litestream.yml); the binary is installed and the start
+command set by the [`Dockerfile`](../Dockerfile) (Railway builds via Dockerfile —
+see [`railway.toml`](../railway.toml)). nixpacks was dropped because it would not
+reliably place the Litestream binary on PATH.
 
 ## How it runs in production
 
