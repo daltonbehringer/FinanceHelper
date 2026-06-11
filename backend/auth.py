@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 import stytch
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -7,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from stytch.core.response_base import StytchError
 
 from backend.db import execute, fetchone
+from backend.lib.dates import utc_now_iso
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -35,7 +35,7 @@ def _resolve_user(stytch_user_id: str, email: str) -> int:
         return row["id"]
     execute(
         "INSERT INTO users (stytch_user_id, email, created_at) VALUES (?, ?, ?)",
-        (stytch_user_id, email, datetime.utcnow().isoformat()),
+        (stytch_user_id, email, utc_now_iso()),
     )
     return fetchone("SELECT id FROM users WHERE stytch_user_id = ?", (stytch_user_id,))["id"]
 

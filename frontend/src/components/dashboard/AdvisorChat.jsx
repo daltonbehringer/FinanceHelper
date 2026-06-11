@@ -147,7 +147,8 @@ export default function AdvisorChat({ accounts, expenses = [], onUpdate, onExpen
 
     setConfirming(true)
     try {
-      // Create snapshot for the primary (debt) account
+      // Create snapshot for the primary (debt) account.
+      // source: 'llm' tags the event log — this write originated from the AI chat.
       const resp = await apiFetch('/api/snapshots', {
         method: 'POST',
         body: JSON.stringify({
@@ -155,6 +156,8 @@ export default function AdvisorChat({ accounts, expenses = [], onUpdate, onExpen
           balance: response.new_balance,
           payment_made: response.payment_made,
           note: response.note || '',
+          source: 'llm',
+          source_detail: 'balance_update',
         }),
       })
 
@@ -171,6 +174,8 @@ export default function AdvisorChat({ accounts, expenses = [], onUpdate, onExpen
             account_id: sourceAccountId,
             balance: sourceNewBalance,
             note: `Payment of ${formatMoney(response.payment_made)} to ${getAccountName(accountId)}`,
+            source: 'llm',
+            source_detail: 'balance_update',
           }),
         })
 
@@ -227,6 +232,8 @@ export default function AdvisorChat({ accounts, expenses = [], onUpdate, onExpen
           source_account_id: sourceAccountId,
           source_new_balance: sourceNewBalance,
           note: response.note || '',
+          source: 'llm',
+          source_detail: 'expense_payment',
         }),
       })
 

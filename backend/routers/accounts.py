@@ -1,28 +1,23 @@
-from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, StrictInt
 
 from backend.auth import get_current_user
-from backend.db import execute, fetchall, fetchone
+from backend.db import fetchall
+from backend.services import accounts as accounts_service
+from backend.services._core import EventContext
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-
-VALID_TYPES = {
-    "credit_card", "loan", "mortgage", "line_of_credit",
-    "savings", "checking", "other",
-    "401k", "ira", "roth_ira", "brokerage", "hsa",
-}
 
 
 class AccountCreate(BaseModel):
     name: str
     type: str
-    balance: float = 0
+    balance: StrictInt = 0  # integer cents; floats are rejected
     interest_rate: float = 0
-    minimum_payment: Optional[float] = None
-    credit_limit: Optional[float] = None
+    minimum_payment: Optional[StrictInt] = None
+    credit_limit: Optional[StrictInt] = None
     due_date: Optional[str] = None
     promo_rate: Optional[float] = None
     promo_end_date: Optional[str] = None
@@ -30,11 +25,11 @@ class AccountCreate(BaseModel):
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
-    type: Optional[str] = None
-    balance: Optional[float] = None
+    type: Optional[str] = None  # always rejected — type is immutable
+    balance: Optional[StrictInt] = None
     interest_rate: Optional[float] = None
-    minimum_payment: Optional[float] = None
-    credit_limit: Optional[float] = None
+    minimum_payment: Optional[StrictInt] = None
+    credit_limit: Optional[StrictInt] = None
     due_date: Optional[str] = None
     promo_rate: Optional[float] = None
     promo_end_date: Optional[str] = None
@@ -67,67 +62,23 @@ async def list_accounts(
 
 @router.post("")
 async def create_account(body: AccountCreate, user_id: int = Depends(get_current_user)):
-    if body.type not in VALID_TYPES:
-        raise HTTPException(status_code=422, detail=f"Invalid account type: {body.type}")
-
-    now = datetime.utcnow().isoformat()
-    execute(
-        """
-        INSERT INTO accounts (user_id, name, type, balance, interest_rate,
-                              minimum_payment, credit_limit, due_date, created_at,
-                              promo_rate, promo_end_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (user_id, body.name, body.type, body.balance, body.interest_rate,
-         body.minimum_payment, body.credit_limit, body.due_date, now,
-         body.promo_rate, body.promo_end_date),
-    )
-    row = fetchone(
-        "SELECT * FROM accounts WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-        (user_id,),
-    )
-    return dict(row)
+    # exclude_unset so per-type field validation only sees what the client sent.
+    data = {"name": body.name, "type": body.type, **body.model_dump(exclude_unset=True)}
+    return accounts_service.create_account(user_id, data, EventContext(source="user"))
 
 
 @router.put("/{account_id}")
 async def update_account(
     account_id: int, body: AccountUpdate, user_id: int = Depends(get_current_user)
 ):
-    row = fetchone(
-        "SELECT id FROM accounts WHERE id = ? AND user_id = ?",
-        (account_id, user_id),
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Account not found")
-
     updates = body.model_dump(exclude_none=True)
-    if not updates:
-        raise HTTPException(status_code=422, detail="No fields to update")
-
-    if "type" in updates and updates["type"] not in VALID_TYPES:
-        raise HTTPException(status_code=422, detail=f"Invalid account type: {updates['type']}")
-
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [account_id, user_id]
-    execute(
-        f"UPDATE accounts SET {set_clause} WHERE id = ? AND user_id = ?",
-        tuple(values),
+    return accounts_service.update_account(
+        user_id, account_id, updates, EventContext(source="user")
     )
-    row = fetchone("SELECT * FROM accounts WHERE id = ?", (account_id,))
-    return dict(row)
 
 
 @router.post("/{account_id}/deactivate")
 async def deactivate_account(account_id: int, user_id: int = Depends(get_current_user)):
-    row = fetchone(
-        "SELECT id FROM accounts WHERE id = ? AND user_id = ?",
-        (account_id, user_id),
+    return accounts_service.deactivate_account(
+        user_id, account_id, EventContext(source="user")
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    execute(
-        "UPDATE accounts SET is_active = 0 WHERE id = ? AND user_id = ?",
-        (account_id, user_id),
-    )
-    return {"status": "deactivated"}

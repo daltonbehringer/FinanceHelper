@@ -2,11 +2,15 @@
 
 Columns mirror the real schema in backend/db.py. Writes go through
 backend.db.execute so they hit whatever temp DB the temp_db fixture configured.
+
+Phase 1: all monetary values are INTEGER CENTS (e.g. balance=100000 is $1,000).
+Snapshot recorded_at defaults to a full ISO UTC timestamp.
 """
 
 from datetime import date
 
 from backend.db import execute
+from backend.lib.dates import utc_now_iso
 
 _TODAY = date.today().isoformat()
 
@@ -23,7 +27,7 @@ def make_account(
     user_id,
     name="Test Account",
     type="checking",
-    balance=0.0,
+    balance=0,
     interest_rate=0.0,
     minimum_payment=None,
     credit_limit=None,
@@ -52,8 +56,10 @@ def make_snapshot(
     balance,
     payment_made=None,
     note=None,
-    recorded_at=_TODAY,
+    recorded_at=None,
 ):
+    if recorded_at is None:
+        recorded_at = utc_now_iso()
     cur = execute(
         """
         INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at)
@@ -67,7 +73,7 @@ def make_snapshot(
 def make_expense(
     user_id,
     name="Test Expense",
-    amount=10.0,
+    amount=1000,
     category=None,
     due_day=None,
     is_active=1,
@@ -91,7 +97,7 @@ def make_expense(
 def make_income(
     user_id,
     name="Test Income",
-    amount=1000.0,
+    amount=100000,
     frequency="monthly",
     income_day=None,
     last_pay_date=None,
@@ -111,7 +117,7 @@ def make_income(
 
 def make_settings(
     user_id,
-    min_checking=0.0,
+    min_checking=0,
     default_payment_account_id=None,
     payment_account_configured=1,
     updated_at=_TODAY,

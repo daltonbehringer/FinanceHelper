@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
-import { formatMoney, formatDate, nextDueDate } from '../lib/utils'
+import { formatMoney, formatDate, nextDueDate, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useExpenses } from '../hooks/useExpenses'
 import { useToast } from '../context/ToastContext'
 import Button from '../components/ui/Button'
@@ -211,7 +211,7 @@ export default function Expenses() {
     try {
       const body = {
         name: addForm.name.trim(),
-        amount: parseFloat(addForm.amount),
+        amount: dollarsToCents(addForm.amount),
         category: addForm.category.trim() || null,
         is_recurring: !addForm.isOneTime,
       }
@@ -243,7 +243,7 @@ export default function Expenses() {
     const isOneTime = expense.is_recurring === 0 || expense.is_recurring === false
     setEditForm({
       name: expense.name,
-      amount: String(expense.amount),
+      amount: centsToDollarInput(expense.amount),
       category: expense.category || '',
       isOneTime,
       due_day: expense.due_day != null ? String(expense.due_day) : '',
@@ -258,7 +258,7 @@ export default function Expenses() {
     try {
       const body = {
         name: editForm.name.trim(),
-        amount: parseFloat(editForm.amount),
+        amount: dollarsToCents(editForm.amount),
         category: editForm.category.trim() || null,
         is_recurring: !editForm.isOneTime,
       }

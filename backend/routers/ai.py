@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import date
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from backend.auth import get_current_user
 from backend.db import fetchall, fetchone
+from backend.lib.dates import next_expense_due, next_payday
 from backend.rate_limit import limiter
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -44,6 +45,37 @@ def _get_accounts_for_user(user_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _fmt_cents(cents) -> str:
+    """Integer cents -> '$1,234.56' for prompt readability."""
+    return f"${(cents or 0) / 100:,.2f}"
+
+
+def _dollars_view(rows: list[dict], money_fields: tuple[str, ...]) -> list[dict]:
+    """Copy of rows with integer-cent fields converted to dollar floats.
+
+    The DB stores cents, but the LLM reads and returns dollar amounts — its
+    prompt examples and arithmetic all operate in dollars.
+    """
+    out = []
+    for r in rows:
+        entry = dict(r)
+        for f in money_fields:
+            if entry.get(f) is not None:
+                entry[f] = entry[f] / 100
+        out.append(entry)
+    return out
+
+
+ACCOUNT_MONEY_FIELDS = ("current_balance", "minimum_payment", "credit_limit")
+
+
+def _dollars_to_cents(parsed: dict, fields: tuple[str, ...]):
+    """Convert the LLM's dollar amounts to integer cents, in place."""
+    for f in fields:
+        if isinstance(parsed.get(f), (int, float)):
+            parsed[f] = round(parsed[f] * 100)
+
+
 def _strip_markdown_fencing(text: str) -> str:
     text = text.strip()
     if text.startswith("```json"):
@@ -70,13 +102,17 @@ def _get_user_settings(user_id: int) -> dict:
 
 
 def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
-    """Build full financial context string. Returns (accounts, context_str)."""
+    """Build full financial context string. Returns (accounts_in_cents, context_str).
+
+    DB amounts are integer cents; the prompt JSON and all formatted figures are
+    rendered in dollars for LLM readability.
+    """
     accounts = _get_accounts_for_user(user_id)
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)
     settings = _get_user_settings(user_id)
 
-    # Pre-compute aggregates so the LLM doesn't have to do arithmetic
+    # Pre-compute aggregates (in cents) so the LLM doesn't have to do arithmetic
     debt_types = {"credit_card", "loan", "mortgage", "line_of_credit"}
     debt_accounts = [a for a in accounts if a["type"] in debt_types]
     asset_accounts = [a for a in accounts if a["type"] not in debt_types]
@@ -87,12 +123,16 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
     min_checking = settings.get("min_checking") or 0
     default_payment_id = settings.get("default_payment_account_id")
 
+    accounts_dollars = _dollars_view(accounts, ACCOUNT_MONEY_FIELDS)
+    income_dollars = _dollars_view(income, ("amount",))
+    expenses_dollars = _dollars_view(expenses, ("amount",))
+
     parts = [
-        f"Current accounts:\n{json.dumps(accounts, indent=2)}",
+        f"Current accounts:\n{json.dumps(accounts_dollars, indent=2)}",
         f"PRE-COMPUTED TOTALS (use these exact numbers, do NOT recalculate):\n"
-        f"  Total debt: ${total_debt:,.2f}\n"
-        f"  Total assets: ${total_assets:,.2f}\n"
-        f"  Net worth (assets minus debt): ${net_worth:,.2f}",
+        f"  Total debt: {_fmt_cents(total_debt)}\n"
+        f"  Total assets: {_fmt_cents(total_assets)}\n"
+        f"  Net worth (assets minus debt): {_fmt_cents(net_worth)}",
     ]
 
     if default_payment_id:
@@ -100,15 +140,15 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         if default_acct:
             parts.append(
                 f"DEFAULT PAYMENT ACCOUNT: \"{default_acct['name']}\" (id: {default_payment_id}, "
-                f"current balance: ${default_acct.get('current_balance') or 0:,.2f})\n"
+                f"current balance: {_fmt_cents(default_acct.get('current_balance'))})\n"
                 f"When the user reports a payment on a debt account, this is the account the "
                 f"payment is made FROM unless they specify otherwise."
             )
 
     if min_checking > 0:
         parts.append(
-            f"CHECKING ACCOUNT FLOOR: ${min_checking:,.2f}\n"
-            f"The user has set a minimum checking balance of ${min_checking:,.2f}. "
+            f"CHECKING ACCOUNT FLOOR: {_fmt_cents(min_checking)}\n"
+            f"The user has set a minimum checking balance of {_fmt_cents(min_checking)}. "
             f"This is a hard floor — NEVER recommend any payment or action that would cause "
             f"the user's checking account balance to drop below this amount. This reserve "
             f"covers essentials like groceries, gas, medical, and unexpected expenses. "
@@ -120,11 +160,11 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
         monthly_income = sum(
             r["amount"] * MONTHLY_MULTIPLIERS.get(r["frequency"], 1.0) for r in income
         )
-        parts.append(f"Recurring income:\n{json.dumps(income, indent=2)}\nEstimated total monthly income: ${monthly_income:,.2f}")
+        parts.append(f"Recurring income:\n{json.dumps(income_dollars, indent=2)}\nEstimated total monthly income: {_fmt_cents(monthly_income)}")
 
     if expenses:
-        recurring = [e for e in expenses if e.get("is_recurring", 1) != 0]
-        one_time = [e for e in expenses if e.get("is_recurring", 1) == 0]
+        recurring = [e for e in expenses_dollars if e.get("is_recurring", 1) != 0]
+        one_time = [e for e in expenses_dollars if e.get("is_recurring", 1) == 0]
         monthly_expenses = sum(e["amount"] for e in recurring)
         if recurring:
             parts.append(f"Recurring monthly expenses:\n{json.dumps(recurring, indent=2)}\nTotal monthly recurring: ${monthly_expenses:,.2f}")
@@ -243,9 +283,17 @@ Answer rules:
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="AI returned invalid JSON")
 
+    # The LLM speaks dollars; the API contract is integer cents. Convert every
+    # monetary field before recomputation so all arithmetic below is in cents.
+    if parsed.get("type") == "balance_update":
+        _dollars_to_cents(parsed, ("new_balance", "payment_made", "interest_portion",
+                                   "principal_portion", "source_new_balance"))
+    elif parsed.get("type") == "expense_payment":
+        _dollars_to_cents(parsed, ("amount", "source_new_balance"))
+
     # Server-side recomputation for ALL payment arithmetic.
     # LLMs are unreliable at arithmetic, so we recompute every derived
-    # balance using exact Python math, overriding the LLM's values.
+    # balance using exact integer-cent math, overriding the LLM's values.
     # The LLM still handles intent detection, account matching, and notes.
     if parsed.get("type") == "balance_update" and parsed.get("payment_made") is not None:
         payment = parsed["payment_made"]
@@ -260,22 +308,22 @@ Answer rules:
                 if acct["type"] in ("loan", "mortgage"):
                     rate = acct.get("interest_rate") or 0
                     if rate > 0 and payment > 0:
-                        monthly_interest = round(current * rate / 100 / 12, 2)
+                        monthly_interest = round(current * rate / 100 / 12)
                         if payment <= monthly_interest:
                             parsed["new_balance"] = current
                             parsed["interest_portion"] = payment
                             parsed["principal_portion"] = 0
                         else:
-                            principal_paid = round(payment - monthly_interest, 2)
-                            parsed["new_balance"] = round(current - principal_paid, 2)
+                            principal_paid = payment - monthly_interest
+                            parsed["new_balance"] = current - principal_paid
                             parsed["interest_portion"] = monthly_interest
                             parsed["principal_portion"] = principal_paid
                     else:
                         # 0% installment debt — treat like revolving
-                        parsed["new_balance"] = round(current - payment, 2)
+                        parsed["new_balance"] = current - payment
                 else:
                     # Revolving debt, non-debt, or any other type: simple subtraction
-                    parsed["new_balance"] = round(current - payment, 2)
+                    parsed["new_balance"] = current - payment
 
         # Recompute source account new_balance
         if parsed.get("source_account_id") is not None:
@@ -283,9 +331,7 @@ Answer rules:
                 (a for a in accounts if a["id"] == parsed["source_account_id"]), None
             )
             if source_acct:
-                parsed["source_new_balance"] = round(
-                    source_acct["current_balance"] - payment, 2
-                )
+                parsed["source_new_balance"] = source_acct["current_balance"] - payment
 
     elif parsed.get("type") == "expense_payment":
         # Recompute source account balance for expense payments
@@ -295,9 +341,7 @@ Answer rules:
                 (a for a in accounts if a["id"] == parsed["source_account_id"]), None
             )
             if source_acct:
-                parsed["source_new_balance"] = round(
-                    source_acct["current_balance"] - amount, 2
-                )
+                parsed["source_new_balance"] = source_acct["current_balance"] - amount
 
     return parsed
 
@@ -325,54 +369,6 @@ MONTHLY_MULTIPLIERS = {
 }
 
 
-def _next_payday(last_pay_date: str | None, frequency: str) -> str | None:
-    """Compute the next payday from last_pay_date and frequency. Returns ISO date string or None."""
-    if not last_pay_date:
-        return None
-    try:
-        d = date.fromisoformat(last_pay_date.split("T")[0])
-    except (ValueError, AttributeError):
-        return None
-    today = date.today()
-
-    def advance(dt: date) -> date:
-        if frequency == "weekly":
-            return dt + timedelta(days=7)
-        elif frequency == "biweekly":
-            return dt + timedelta(days=14)
-        elif frequency == "semimonthly":
-            return dt + timedelta(days=15)
-        elif frequency == "monthly":
-            m = dt.month % 12 + 1
-            y = dt.year + (1 if dt.month == 12 else 0)
-            return dt.replace(year=y, month=m)
-        elif frequency == "annual":
-            return dt.replace(year=dt.year + 1)
-        return dt + timedelta(days=30)
-
-    while d <= today:
-        d = advance(d)
-    return d.isoformat()
-
-
-def _next_expense_due(due_day: int | None, due_date: str | None, is_recurring: int) -> str | None:
-    """Compute the next due date for an expense. Returns ISO date string or None."""
-    if is_recurring and due_day:
-        today = date.today()
-        try:
-            candidate = today.replace(day=due_day)
-        except ValueError:
-            candidate = today.replace(day=28)
-        if candidate < today:
-            m = candidate.month % 12 + 1
-            y = candidate.year + (1 if candidate.month == 12 else 0)
-            candidate = candidate.replace(year=y, month=m)
-        return candidate.isoformat()
-    elif due_date:
-        return due_date.split("T")[0]
-    return None
-
-
 def _get_income_for_user(user_id: int) -> list[dict]:
     rows = fetchall(
         "SELECT id, name, amount, frequency, income_day, last_pay_date FROM recurring_income WHERE user_id = ? AND is_active = 1",
@@ -392,11 +388,13 @@ def _get_expenses_for_user(user_id: int) -> list[dict]:
 @router.post("/recommend")
 @limiter.limit("5/minute")
 async def recommend(request: Request, user_id: int = Depends(get_current_user)):
-    accounts = _get_accounts_for_user(user_id)
-    income = _get_income_for_user(user_id)
-    expenses = _get_expenses_for_user(user_id)
+    # Dollar views of the cents-valued DB rows — this entire prompt (JSON and
+    # computed figures) is rendered in dollars for the LLM.
+    accounts = _dollars_view(_get_accounts_for_user(user_id), ACCOUNT_MONEY_FIELDS)
+    income = _dollars_view(_get_income_for_user(user_id), ("amount",))
+    expenses = _dollars_view(_get_expenses_for_user(user_id), ("amount",))
     settings = _get_user_settings(user_id)
-    min_checking = settings.get("min_checking") or 0
+    min_checking = (settings.get("min_checking") or 0) / 100
     accounts_json = json.dumps(accounts, indent=2)
     today = date.today().isoformat()
 
@@ -412,7 +410,7 @@ async def recommend(request: Request, user_id: int = Depends(get_current_user)):
         income_with_next = []
         for r in income:
             entry = dict(r)
-            next_pay = _next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
+            next_pay = next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
             if next_pay:
                 entry["next_payday"] = next_pay
             income_with_next.append(entry)
@@ -434,14 +432,14 @@ Estimated monthly income is post-tax.
         recurring_with_due = []
         for e in recurring:
             entry = dict(e)
-            next_due = _next_expense_due(e.get("due_day"), e.get("due_date"), 1)
+            next_due = next_expense_due(e.get("due_day"), e.get("due_date"), 1)
             if next_due:
                 entry["next_due_date"] = next_due
             recurring_with_due.append(entry)
         one_time_with_due = []
         for e in one_time:
             entry = dict(e)
-            next_due = _next_expense_due(None, e.get("due_date"), 0)
+            next_due = next_expense_due(None, e.get("due_date"), 0)
             if next_due:
                 entry["next_due_date"] = next_due
             one_time_with_due.append(entry)

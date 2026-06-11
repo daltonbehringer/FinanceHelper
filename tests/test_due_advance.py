@@ -1,6 +1,6 @@
 """Due-date advancement.
 
-- _advance_month (backend/routers/snapshots.py) clamps to month length.
+- advance_month (backend/lib/dates.py) clamps to month length.
 - Posting a snapshot with payment_made on a debt account auto-advances the
   account's due_date past today.
 - Expense due_day is hard-bounded 1..28 (so the 'due on the 31st' expense case
@@ -12,7 +12,7 @@ from datetime import date
 import pytest
 
 from backend.db import fetchone
-from backend.routers.snapshots import _advance_month
+from backend.lib.dates import advance_month
 from tests.factories import make_account
 
 
@@ -24,7 +24,7 @@ from tests.factories import make_account
     (date(2025, 6, 10), date(2025, 7, 10)),   # ordinary
 ])
 def test_advance_month(start, expected):
-    assert _advance_month(start) == expected
+    assert advance_month(start) == expected
 
 
 def test_snapshot_payment_advances_debt_due_date_past_today(client, user_a):

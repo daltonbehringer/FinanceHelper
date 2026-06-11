@@ -1,11 +1,12 @@
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 
 from backend.auth import get_current_user
-from backend.db import execute, fetchall, fetchone
+from backend.db import fetchall
+from backend.services import income as income_service
+from backend.services._core import EventContext
 
 router = APIRouter(prefix="/api/income", tags=["income"])
 
@@ -14,7 +15,7 @@ VALID_FREQUENCIES = {"weekly", "biweekly", "semimonthly", "monthly", "annual"}
 
 class IncomeCreate(BaseModel):
     name: str
-    amount: float
+    amount: StrictInt  # integer cents; floats are rejected
     frequency: str
     income_day: Optional[int] = None  # day of month (1-28), optional
     last_pay_date: Optional[str] = None
@@ -22,10 +23,23 @@ class IncomeCreate(BaseModel):
 
 class IncomeUpdate(BaseModel):
     name: Optional[str] = None
-    amount: Optional[float] = None
+    amount: Optional[StrictInt] = None
     frequency: Optional[str] = None
     income_day: Optional[int] = None
     last_pay_date: Optional[str] = None
+
+
+def _check_frequency(frequency):
+    if frequency not in VALID_FREQUENCIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid frequency. Must be one of: {', '.join(sorted(VALID_FREQUENCIES))}",
+        )
+
+
+def _check_income_day(income_day):
+    if income_day is not None and not (1 <= income_day <= 28):
+        raise HTTPException(status_code=422, detail="income_day must be between 1 and 28")
 
 
 @router.get("")
@@ -43,67 +57,29 @@ async def list_income(
 
 @router.post("")
 async def create_income(body: IncomeCreate, user_id: int = Depends(get_current_user)):
-    if body.frequency not in VALID_FREQUENCIES:
-        raise HTTPException(status_code=422, detail=f"Invalid frequency. Must be one of: {', '.join(sorted(VALID_FREQUENCIES))}")
-    if body.income_day is not None and not (1 <= body.income_day <= 28):
-        raise HTTPException(status_code=422, detail="income_day must be between 1 and 28")
-
-    now = datetime.utcnow().isoformat()
-    execute(
-        """
-        INSERT INTO recurring_income (user_id, name, amount, frequency, income_day, last_pay_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (user_id, body.name, body.amount, body.frequency, body.income_day, body.last_pay_date, now),
+    _check_frequency(body.frequency)
+    _check_income_day(body.income_day)
+    return income_service.create_income(
+        user_id, body.model_dump(), EventContext(source="user")
     )
-    row = fetchone(
-        "SELECT * FROM recurring_income WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-        (user_id,),
-    )
-    return dict(row)
 
 
 @router.put("/{income_id}")
 async def update_income(
     income_id: int, body: IncomeUpdate, user_id: int = Depends(get_current_user)
 ):
-    row = fetchone(
-        "SELECT id FROM recurring_income WHERE id = ? AND user_id = ?",
-        (income_id, user_id),
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Income not found")
-
     updates = body.model_dump(exclude_none=True)
-    if not updates:
-        raise HTTPException(status_code=422, detail="No fields to update")
-
-    if "frequency" in updates and updates["frequency"] not in VALID_FREQUENCIES:
-        raise HTTPException(status_code=422, detail=f"Invalid frequency. Must be one of: {', '.join(sorted(VALID_FREQUENCIES))}")
-    if "income_day" in updates and updates["income_day"] is not None and not (1 <= updates["income_day"] <= 28):
-        raise HTTPException(status_code=422, detail="income_day must be between 1 and 28")
-
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [income_id, user_id]
-    execute(
-        f"UPDATE recurring_income SET {set_clause} WHERE id = ? AND user_id = ?",
-        tuple(values),
+    if "frequency" in updates:
+        _check_frequency(updates["frequency"])
+    if "income_day" in updates:
+        _check_income_day(updates["income_day"])
+    return income_service.update_income(
+        user_id, income_id, updates, EventContext(source="user")
     )
-    row = fetchone("SELECT * FROM recurring_income WHERE id = ?", (income_id,))
-    return dict(row)
 
 
 @router.post("/{income_id}/deactivate")
 async def deactivate_income(income_id: int, user_id: int = Depends(get_current_user)):
-    row = fetchone(
-        "SELECT id FROM recurring_income WHERE id = ? AND user_id = ?",
-        (income_id, user_id),
+    return income_service.deactivate_income(
+        user_id, income_id, EventContext(source="user")
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Income not found")
-
-    execute(
-        "UPDATE recurring_income SET is_active = 0 WHERE id = ? AND user_id = ?",
-        (income_id, user_id),
-    )
-    return {"status": "deactivated"}

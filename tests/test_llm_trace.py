@@ -33,16 +33,17 @@ from backend.routers.ai import (  # noqa: E402
     _get_income_for_user,
     _get_expenses_for_user,
     _get_user_settings,
+    _dollars_view,
+    ACCOUNT_MONEY_FIELDS,
     INVESTMENT_TYPES,
     MONTHLY_MULTIPLIERS,
-    _next_payday,
-    _next_expense_due,
 )
+from backend.lib.dates import advance_month, next_expense_due, next_payday, utc_now_iso  # noqa: E402
 
 import anthropic  # noqa: E402
 
-# Import the snapshot due-date logic so we can replicate it
-from backend.routers.snapshots import _advance_month, DEBT_TYPES  # noqa: E402
+# Import the snapshot due-date trigger set so we can replicate the flow
+from backend.services.snapshots import DEBT_TYPES  # noqa: E402
 
 MODEL = "claude-sonnet-4-20250514"
 TEST_USER_ID = 1
@@ -67,75 +68,84 @@ def setup_test_db():
         ("test-user-001", "test@example.com", today),
     )
 
-    # --- ACCOUNTS ---
-    # 1: Chase Checking (source account)
+    # --- ACCOUNTS (money values are integer cents) ---
+    # 1: Chase Checking (source account) — $3,500.00
     execute(
         "INSERT INTO accounts (user_id, name, type, balance, interest_rate, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Chase Checking", "checking", 3500.00, 0, None, today),
+        (1, "Chase Checking", "checking", 350000, 0, None, today),
     )
-    # 2: Discover It (credit card, revolving)
+    # 2: Discover It (credit card, revolving) — $2,450.00 / min $65 / limit $8,000
     execute(
         "INSERT INTO accounts (user_id, name, type, balance, interest_rate, minimum_payment, credit_limit, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, "Discover It", "credit_card", 2450.00, 22.99, 65.00, 8000.00, "2026-04-08", today),
+        (1, "Discover It", "credit_card", 245000, 22.99, 6500, 800000, "2026-04-08", today),
     )
-    # 3: Car Loan (installment debt)
+    # 3: Car Loan (installment debt) — $14,800.00 / min $320
     execute(
         "INSERT INTO accounts (user_id, name, type, balance, interest_rate, minimum_payment, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, "Toyota Car Loan", "loan", 14800.00, 5.49, 320.00, "2026-04-15", today),
+        (1, "Toyota Car Loan", "loan", 1480000, 5.49, 32000, "2026-04-15", today),
     )
-    # 4: Ally Savings
+    # 4: Ally Savings — $8,200.00
     execute(
         "INSERT INTO accounts (user_id, name, type, balance, interest_rate, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Ally Savings", "savings", 8200.00, 4.25, None, today),
+        (1, "Ally Savings", "savings", 820000, 4.25, None, today),
     )
 
-    # --- EXPENSES ---
-    # 1: Rent (recurring, due 1st)
+    # --- EXPENSES (integer cents) ---
+    # 1: Rent (recurring, due 1st) — $1,400.00
     execute(
         "INSERT INTO recurring_expenses (user_id, name, amount, category, due_day, is_recurring, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Rent", 1400.00, "Housing", 1, 1, today),
+        (1, "Rent", 140000, "Housing", 1, 1, today),
     )
-    # 2: Netflix (recurring, due 15th)
+    # 2: Netflix (recurring, due 15th) — $15.99
     execute(
         "INSERT INTO recurring_expenses (user_id, name, amount, category, due_day, is_recurring, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Netflix", 15.99, "Entertainment", 15, 1, today),
+        (1, "Netflix", 1599, "Entertainment", 15, 1, today),
     )
-    # 3: Pet Insurance (recurring, due 10th)
+    # 3: Pet Insurance (recurring, due 10th) — $45.00
     execute(
         "INSERT INTO recurring_expenses (user_id, name, amount, category, due_day, is_recurring, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Pet Insurance", 45.00, "Insurance", 10, 1, today),
+        (1, "Pet Insurance", 4500, "Insurance", 10, 1, today),
     )
-    # 4: One-time expense — Vet Visit
+    # 4: One-time expense — Vet Visit — $250.00
     execute(
         "INSERT INTO recurring_expenses (user_id, name, amount, category, is_recurring, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Vet Visit", 250.00, "Pet", 0, "2026-04-01", today),
+        (1, "Vet Visit", 25000, "Pet", 0, "2026-04-01", today),
     )
 
-    # --- USER SETTINGS (default payment = Chase Checking) ---
+    # --- USER SETTINGS (default payment = Chase Checking, floor $500.00) ---
     execute(
         "INSERT INTO user_settings (user_id, min_checking, default_payment_account_id, payment_account_configured, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (1, 500.00, 1, 1, today),
+        (1, 50000, 1, 1, today),
     )
 
-    # --- INCOME ---
+    # --- INCOME — $3,800.00 biweekly ---
     execute(
         "INSERT INTO recurring_income (user_id, name, amount, frequency, income_day, last_pay_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (1, "Software Engineer Salary", 3800.00, "biweekly", 15, last_month, today),
+        (1, "Software Engineer Salary", 380000, "biweekly", 15, last_month, today),
     )
 
     print("Test DB created with seed data.\n")
 
 
 def get_balance(account_id: int) -> float:
-    """Get current balance for an account (snapshot-first, fallback to accounts.balance)."""
+    """Current balance in DOLLARS (snapshot-first, fallback to accounts.balance).
+
+    The DB stores integer cents; this script's trace/assertion math stays in
+    dollars (matching what the LLM reads and returns), so convert here.
+    """
     snap = fetchone(
         "SELECT balance FROM account_snapshots WHERE account_id = ? ORDER BY id DESC LIMIT 1",
         (account_id,),
     )
     if snap:
-        return snap["balance"]
+        return snap["balance"] / 100
     row = fetchone("SELECT balance FROM accounts WHERE id = ?", (account_id,))
-    return row["balance"] if row else 0.0
+    return row["balance"] / 100 if row else 0.0
+
+
+def _cents(dollars) -> int | None:
+    """Dollars -> integer cents for DB writes (None passes through)."""
+    return None if dollars is None else round(dollars * 100)
 
 
 def get_due_date(account_id: int) -> str | None:
@@ -149,8 +159,14 @@ def get_expense(expense_id: int) -> dict | None:
 
 
 def send_to_llm(prompt: str) -> dict:
-    """Send a prompt through the same pipeline as /api/ai/chat."""
+    """Send a prompt through the same pipeline as /api/ai/chat.
+
+    Unlike ai.py (which converts the LLM's dollar output to cents for the API
+    contract), this script keeps the response in dollars — so the recompute
+    below runs against a dollars view of the cents-valued accounts.
+    """
     accounts, financial_context = _build_financial_context(TEST_USER_ID)
+    accounts = _dollars_view(accounts, ACCOUNT_MONEY_FIELDS)
     today = date.today().isoformat()
 
     system_prompt = f"""You are a personal finance advisor and assistant. Today's date: {today}.
@@ -294,19 +310,22 @@ Expense payment rules:
 
 
 def apply_balance_update(resp: dict):
-    """Simulate what the frontend + backend do for a balance_update response."""
+    """Simulate what the frontend + backend do for a balance_update response.
+
+    resp values are dollars (LLM output); DB writes are integer cents.
+    """
     account_id = resp["account_id"]
-    new_balance = resp["new_balance"]
-    payment_made = resp.get("payment_made")
+    new_balance = _cents(resp["new_balance"])
+    payment_made = _cents(resp.get("payment_made"))
     note = resp.get("note", "")
     source_account_id = resp.get("source_account_id")
-    source_new_balance = resp.get("source_new_balance")
-    today = date.today().isoformat()
+    source_new_balance = _cents(resp.get("source_new_balance"))
+    now = utc_now_iso()
 
     # 1. Create snapshot on target account
     execute(
         "INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (account_id, TEST_USER_ID, new_balance, payment_made, note, today),
+        (account_id, TEST_USER_ID, new_balance, payment_made, note, now),
     )
     execute(
         "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
@@ -321,9 +340,9 @@ def apply_balance_update(resp: dict):
         )
         if acct and acct["type"] in DEBT_TYPES and acct["due_date"]:
             old_due = date.fromisoformat(acct["due_date"])
-            new_due = _advance_month(old_due)
+            new_due = advance_month(old_due)
             while new_due <= date.today():
-                new_due = _advance_month(new_due)
+                new_due = advance_month(new_due)
             execute(
                 "UPDATE accounts SET due_date = ? WHERE id = ? AND user_id = ?",
                 (new_due.isoformat(), account_id, TEST_USER_ID),
@@ -334,7 +353,7 @@ def apply_balance_update(resp: dict):
         execute(
             "INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at) VALUES (?, ?, ?, ?, ?, ?)",
             (source_account_id, TEST_USER_ID, source_new_balance, payment_made,
-             f"Payment to account {account_id}", today),
+             f"Payment to account {account_id}", now),
         )
         execute(
             "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
@@ -343,10 +362,14 @@ def apply_balance_update(resp: dict):
 
 
 def apply_expense_payment(resp: dict):
-    """Simulate what the frontend + backend do for an expense_payment response."""
+    """Simulate what the frontend + backend do for an expense_payment response.
+
+    resp values are dollars (LLM output); DB writes are integer cents.
+    `expense["amount"]` comes from the DB so it is already cents.
+    """
     expense_id = resp["expense_id"]
     source_account_id = resp.get("source_account_id")
-    source_new_balance = resp.get("source_new_balance")
+    source_new_balance = _cents(resp.get("source_new_balance"))
     note = resp.get("note", "")
     today = date.today().isoformat()
 
@@ -367,7 +390,7 @@ def apply_expense_payment(resp: dict):
         execute(
             "INSERT INTO account_snapshots (account_id, user_id, balance, payment_made, note, recorded_at) VALUES (?, ?, ?, ?, ?, ?)",
             (source_account_id, TEST_USER_ID, source_new_balance,
-             expense["amount"], note or f"Paid {expense['name']}", today),
+             expense["amount"], note or f"Paid {expense['name']}", utc_now_iso()),
         )
         execute(
             "UPDATE accounts SET balance = ? WHERE id = ? AND user_id = ?",
@@ -418,15 +441,6 @@ def _amount_in_text(amount: float, text: str) -> bool:
     return False
 
 
-
-    """Assert two floats are within tolerance."""
-    if abs(actual - expected) > tolerance:
-        print(f"  FAIL  {label}: expected {expected:.2f}, got {actual:.2f}")
-        return False
-    print(f"  PASS  {label}: {actual:.2f} (expected {expected:.2f})")
-    return True
-
-
 # ---------------------------------------------------------------------------
 # TEST CASES
 # ---------------------------------------------------------------------------
@@ -474,9 +488,9 @@ def test_1_credit_card_payment_amount_only():
 
     # Due date should advance by 1 month
     old_due = date.fromisoformat(before_due)
-    expected_due = _advance_month(old_due)
+    expected_due = advance_month(old_due)
     while expected_due <= date.today():
-        expected_due = _advance_month(expected_due)
+        expected_due = advance_month(expected_due)
     assert after_due == expected_due.isoformat(), f"Due date: expected {expected_due.isoformat()}, got {after_due}"
     print(f"  PASS  Due date advanced: {before_due} → {after_due}")
 
@@ -572,9 +586,9 @@ def test_3_installment_debt_payment():
 
     # Due date should advance
     old_due = date.fromisoformat(before_due)
-    expected_due = _advance_month(old_due)
+    expected_due = advance_month(old_due)
     while expected_due <= date.today():
-        expected_due = _advance_month(expected_due)
+        expected_due = advance_month(expected_due)
     assert after_due == expected_due.isoformat(), f"Due date: expected {expected_due.isoformat()}, got {after_due}"
     print(f"  PASS  Due date advanced: {before_due} → {after_due}")
 
@@ -708,11 +722,12 @@ def test_7_recommendation_budget_and_floor():
     results = []
 
     # --- Step 1: Verify raw data matches DB state ---
-    accounts = _get_accounts_for_user(TEST_USER_ID)
-    income = _get_income_for_user(TEST_USER_ID)
-    expenses = _get_expenses_for_user(TEST_USER_ID)
+    # DB rows are integer cents; this script's math and prompts are in dollars.
+    accounts = _dollars_view(_get_accounts_for_user(TEST_USER_ID), ACCOUNT_MONEY_FIELDS)
+    income = _dollars_view(_get_income_for_user(TEST_USER_ID), ("amount",))
+    expenses = _dollars_view(_get_expenses_for_user(TEST_USER_ID), ("amount",))
     settings = _get_user_settings(TEST_USER_ID)
-    min_checking = settings.get("min_checking") or 0
+    min_checking = (settings.get("min_checking") or 0) / 100
 
     print(f"\n  Settings — min_checking (floor): ${min_checking:.2f}")
     print(f"  Settings — default_payment_account_id: {settings.get('default_payment_account_id')}")
@@ -728,7 +743,7 @@ def test_7_recommendation_budget_and_floor():
 
     # Verify min_checking matches what's in the DB
     settings_row = fetchone("SELECT min_checking FROM user_settings WHERE user_id = ?", (TEST_USER_ID,))
-    db_floor = settings_row["min_checking"] if settings_row else 0
+    db_floor = settings_row["min_checking"] / 100 if settings_row else 0
     floor_match = abs(min_checking - db_floor) < 0.01
     results.append(floor_match)
     print(f"\n  {'PASS' if floor_match else 'FAIL'}  Checking floor: settings=${min_checking:.2f}, DB=${db_floor:.2f}")
@@ -770,7 +785,7 @@ def test_7_recommendation_budget_and_floor():
     for acct in accounts:
         if acct["type"] not in INVESTMENT_TYPES and (acct.get("minimum_payment") or 0) > 0:
             db_row = fetchone("SELECT minimum_payment FROM accounts WHERE id = ?", (acct["id"],))
-            db_min = db_row["minimum_payment"] if db_row and db_row["minimum_payment"] else 0
+            db_min = db_row["minimum_payment"] / 100 if db_row and db_row["minimum_payment"] else 0
             match = abs((acct.get("minimum_payment") or 0) - db_min) < 0.01
             results.append(match)
             print(f"    {'PASS' if match else 'FAIL'}  [{acct['id']}] {acct['name']}: min_payment=${acct.get('minimum_payment', 0):.2f}, DB=${db_min:.2f}")
@@ -788,7 +803,7 @@ def test_7_recommendation_budget_and_floor():
         income_with_next = []
         for r in income:
             entry = dict(r)
-            next_pay = _next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
+            next_pay = next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
             if next_pay:
                 entry["next_payday"] = next_pay
             income_with_next.append(entry)
@@ -801,14 +816,14 @@ def test_7_recommendation_budget_and_floor():
         recurring_with_due = []
         for e in recurring:
             entry = dict(e)
-            next_due = _next_expense_due(e.get("due_day"), e.get("due_date"), 1)
+            next_due = next_expense_due(e.get("due_day"), e.get("due_date"), 1)
             if next_due:
                 entry["next_due_date"] = next_due
             recurring_with_due.append(entry)
         one_time_with_due = []
         for e in one_time:
             entry = dict(e)
-            next_due = _next_expense_due(None, e.get("due_date"), 0)
+            next_due = next_expense_due(None, e.get("due_date"), 0)
             if next_due:
                 entry["next_due_date"] = next_due
             one_time_with_due.append(entry)
@@ -959,11 +974,12 @@ def test_8_no_debt_recommendation():
 
     try:
         # --- Step 2: Verify budget breakdown with no debt ---
-        accounts = _get_accounts_for_user(TEST_USER_ID)
-        income = _get_income_for_user(TEST_USER_ID)
-        expenses = _get_expenses_for_user(TEST_USER_ID)
+        # DB rows are integer cents; this script's math and prompts are in dollars.
+        accounts = _dollars_view(_get_accounts_for_user(TEST_USER_ID), ACCOUNT_MONEY_FIELDS)
+        income = _dollars_view(_get_income_for_user(TEST_USER_ID), ("amount",))
+        expenses = _dollars_view(_get_expenses_for_user(TEST_USER_ID), ("amount",))
         settings = _get_user_settings(TEST_USER_ID)
-        min_checking = settings.get("min_checking") or 0
+        min_checking = (settings.get("min_checking") or 0) / 100
 
         # With no debt accounts active, there should be no debt-type accounts
         active_debt = [a for a in accounts if a["type"] in {"credit_card", "loan", "mortgage", "line_of_credit"}]
@@ -1014,7 +1030,7 @@ def test_8_no_debt_recommendation():
             income_with_next = []
             for r in income:
                 entry = dict(r)
-                next_pay = _next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
+                next_pay = next_payday(r.get("last_pay_date"), r.get("frequency", "monthly"))
                 if next_pay:
                     entry["next_payday"] = next_pay
                 income_with_next.append(entry)
@@ -1027,14 +1043,14 @@ def test_8_no_debt_recommendation():
             recurring_with_due = []
             for e in recurring:
                 entry = dict(e)
-                next_due = _next_expense_due(e.get("due_day"), e.get("due_date"), 1)
+                next_due = next_expense_due(e.get("due_day"), e.get("due_date"), 1)
                 if next_due:
                     entry["next_due_date"] = next_due
                 recurring_with_due.append(entry)
             one_time_with_due = []
             for e in one_time:
                 entry = dict(e)
-                next_due = _next_expense_due(None, e.get("due_date"), 0)
+                next_due = next_expense_due(None, e.get("due_date"), 0)
                 if next_due:
                     entry["next_due_date"] = next_due
                 one_time_with_due.append(entry)
@@ -1195,7 +1211,7 @@ def main():
     print("\n  Final expense state:")
     for row in fetchall("SELECT id, name, amount, is_recurring, is_active, last_paid_date FROM recurring_expenses WHERE user_id = ?", (TEST_USER_ID,)):
         r = dict(row)
-        print(f"    [{r['id']}] {r['name']}: ${r['amount']:.2f}  recurring={r['is_recurring']}  active={r['is_active']}  last_paid={r['last_paid_date']}")
+        print(f"    [{r['id']}] {r['name']}: ${r['amount'] / 100:.2f}  recurring={r['is_recurring']}  active={r['is_active']}  last_paid={r['last_paid_date']}")
 
     print("\n  Test results:")
     all_pass = True

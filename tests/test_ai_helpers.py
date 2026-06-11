@@ -6,10 +6,10 @@ place (no extraction needed). NONE of these tests call the Anthropic API.
 
 from datetime import date
 
+from backend.lib.dates import next_expense_due
 from backend.routers.ai import (
     MONTHLY_MULTIPLIERS,
     _build_financial_context,
-    _next_expense_due,
     _strip_markdown_fencing,
 )
 from tests.factories import make_account, make_expense, make_income
@@ -36,25 +36,26 @@ def test_monthly_multipliers():
 
 
 def test_next_expense_due_recurring_uses_due_day():
-    result = _next_expense_due(due_day=20, due_date=None, is_recurring=1)
+    result = next_expense_due(due_day=20, due_date=None, is_recurring=1)
     d = date.fromisoformat(result)
     assert d.day == 20
     assert d >= date.today()
 
 
 def test_next_expense_due_one_time_strips_time():
-    assert _next_expense_due(None, "2026-12-01T00:00:00", 0) == "2026-12-01"
+    assert next_expense_due(None, "2026-12-01T00:00:00", 0) == "2026-12-01"
 
 
 def test_next_expense_due_none_when_no_inputs():
-    assert _next_expense_due(None, None, 1) is None
+    assert next_expense_due(None, None, 1) is None
 
 
 def test_build_financial_context_precomputes_totals(temp_db, user_a):
-    make_account(user_a, name="Card", type="credit_card", balance=1000)
-    make_account(user_a, name="Cash", type="checking", balance=500)
-    make_income(user_a, amount=2000, frequency="monthly")
-    make_expense(user_a, name="Rent", amount=800)
+    # Amounts are integer cents; the prompt renders them as dollars.
+    make_account(user_a, name="Card", type="credit_card", balance=100000)
+    make_account(user_a, name="Cash", type="checking", balance=50000)
+    make_income(user_a, amount=200000, frequency="monthly")
+    make_expense(user_a, name="Rent", amount=80000)
 
     accounts, context = _build_financial_context(user_a)
 

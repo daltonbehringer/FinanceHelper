@@ -13,3 +13,5 @@ frontend/dist/
 tests/__pycache__/
 *.db
 PHASE0-FINDINGS.md
+tasks/todo.md
+PHASE1-FINDINGS.md

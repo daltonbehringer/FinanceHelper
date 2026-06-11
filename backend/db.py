@@ -138,6 +138,162 @@ def _migrate_expenses_last_paid_date(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE recurring_expenses ADD COLUMN last_paid_date TEXT")
 
 
+# Cents migration (Phase 1, Workstream 2): for each table, the new DDL with
+# INTEGER money columns and the column list to copy (money columns are wrapped
+# in CAST(ROUND(x * 100) AS INTEGER)). Interest/promo rates are percentages,
+# not money — they stay REAL. Column lists are explicit because older DBs may
+# have a different physical column order (ALTER TABLE appends at the end).
+_CENTS_MIGRATIONS = {
+    "accounts": {
+        "probe": "balance",
+        "money": ["balance", "minimum_payment", "credit_limit"],
+        "columns": ["id", "user_id", "name", "type", "balance", "interest_rate",
+                    "minimum_payment", "credit_limit", "due_date", "is_active",
+                    "created_at", "promo_rate", "promo_end_date"],
+        "ddl": """
+            CREATE TABLE accounts (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id         INTEGER NOT NULL REFERENCES users(id),
+                name            TEXT NOT NULL,
+                type            TEXT NOT NULL,
+                balance         INTEGER NOT NULL DEFAULT 0,
+                interest_rate   REAL NOT NULL DEFAULT 0,
+                minimum_payment INTEGER,
+                credit_limit    INTEGER,
+                due_date        TEXT,
+                is_active       INTEGER NOT NULL DEFAULT 1,
+                created_at      TEXT NOT NULL,
+                promo_rate      REAL,
+                promo_end_date  TEXT
+            )
+        """,
+    },
+    "account_snapshots": {
+        "probe": "balance",
+        "money": ["balance", "payment_made"],
+        "columns": ["id", "account_id", "user_id", "balance", "payment_made",
+                    "note", "recorded_at"],
+        "ddl": """
+            CREATE TABLE account_snapshots (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id    INTEGER NOT NULL REFERENCES accounts(id),
+                user_id       INTEGER NOT NULL REFERENCES users(id),
+                balance       INTEGER NOT NULL,
+                payment_made  INTEGER,
+                note          TEXT,
+                recorded_at   TEXT NOT NULL
+            )
+        """,
+    },
+    "recurring_expenses": {
+        "probe": "amount",
+        "money": ["amount"],
+        "columns": ["id", "user_id", "name", "amount", "category", "due_day",
+                    "is_active", "created_at", "is_recurring", "due_date",
+                    "last_paid_date"],
+        "ddl": """
+            CREATE TABLE recurring_expenses (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id       INTEGER NOT NULL REFERENCES users(id),
+                name          TEXT NOT NULL,
+                amount        INTEGER NOT NULL,
+                category      TEXT,
+                due_day       INTEGER CHECK(due_day IS NULL OR due_day BETWEEN 1 AND 28),
+                is_active     INTEGER NOT NULL DEFAULT 1,
+                created_at    TEXT NOT NULL,
+                is_recurring  INTEGER NOT NULL DEFAULT 1,
+                due_date      TEXT,
+                last_paid_date TEXT
+            )
+        """,
+    },
+    "recurring_income": {
+        "probe": "amount",
+        "money": ["amount"],
+        "columns": ["id", "user_id", "name", "amount", "frequency", "income_day",
+                    "last_pay_date", "is_active", "created_at"],
+        "ddl": """
+            CREATE TABLE recurring_income (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id         INTEGER NOT NULL REFERENCES users(id),
+                name            TEXT NOT NULL,
+                amount          INTEGER NOT NULL,
+                frequency       TEXT NOT NULL,
+                income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 28),
+                last_pay_date   TEXT,
+                is_active       INTEGER NOT NULL DEFAULT 1,
+                created_at      TEXT NOT NULL
+            )
+        """,
+    },
+    "user_settings": {
+        "probe": "min_checking",
+        "money": ["min_checking"],
+        "columns": ["id", "user_id", "min_checking", "default_payment_account_id",
+                    "payment_account_configured", "updated_at"],
+        "ddl": """
+            CREATE TABLE user_settings (
+                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                min_checking                INTEGER NOT NULL DEFAULT 0,
+                default_payment_account_id  INTEGER REFERENCES accounts(id),
+                payment_account_configured  INTEGER NOT NULL DEFAULT 0,
+                updated_at                  TEXT NOT NULL
+            )
+        """,
+    },
+}
+
+
+def _column_decltype(conn: sqlite3.Connection, table: str, column: str) -> str | None:
+    for row in conn.execute(f"PRAGMA table_info({table})").fetchall():
+        if row[1] == column:
+            return (row[2] or "").upper()
+    return None
+
+
+def _migrate_money_to_cents(conn: sqlite3.Connection):
+    """Rebuild tables with REAL money columns as INTEGER cents (round(x * 100)).
+
+    Idempotent: only runs for tables whose probe money column is still declared
+    REAL. Rebuild-and-copy is required because SQLite cannot alter column types.
+    """
+    for table, spec in _CENTS_MIGRATIONS.items():
+        if _column_decltype(conn, table, spec["probe"]) != "REAL":
+            continue  # table missing (fresh DB) or already migrated
+
+        money = set(spec["money"])
+        select_exprs = [
+            f"CAST(ROUND({c} * 100) AS INTEGER)" if c in money else c
+            for c in spec["columns"]
+        ]
+        # legacy_alter_table prevents SQLite from rewriting FK references in
+        # other tables when we rename (same dance as _migrate_accounts_table).
+        conn.execute("PRAGMA legacy_alter_table = ON")
+        conn.execute(f"ALTER TABLE {table} RENAME TO {table}_cents_backup")
+        conn.execute("PRAGMA legacy_alter_table = OFF")
+        conn.execute(spec["ddl"])
+        conn.execute(
+            f"INSERT INTO {table} ({', '.join(spec['columns'])}) "
+            f"SELECT {', '.join(select_exprs)} FROM {table}_cents_backup"
+        )
+        conn.execute(f"DROP TABLE {table}_cents_backup")
+
+
+def _migrate_snapshot_timestamps(conn: sqlite3.Connection):
+    """Upgrade date-only recorded_at values to full ISO 8601 UTC timestamps.
+
+    Fixes PHASE0-FINDINGS #9: date-only values get T00:00:00Z appended; `id`
+    remains the explicit ordering tiebreaker.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(account_snapshots)").fetchall()]
+    if cols:
+        conn.execute(
+            "UPDATE account_snapshots SET recorded_at = recorded_at || 'T00:00:00Z' "
+            "WHERE recorded_at NOT LIKE '%T%'"
+        )
+
+
 def _migrate_settings_default_payment(conn: sqlite3.Connection):
     """Add default_payment_account_id and payment_account_configured columns to user_settings."""
     row = conn.execute(
@@ -157,6 +313,13 @@ def _migrate_settings_default_payment(conn: sqlite3.Connection):
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
+    # Table-rebuild migrations rename tables. With foreign_keys ON, a rename
+    # rewrites FK references in OTHER tables to point at the backup name (the
+    # exact corruption _migrate_snapshots_fk repairs), and dropping the backup
+    # trips immediate FK checks. The pragma is a no-op inside a transaction,
+    # so disable it here for this connection only — get_db() re-enables it for
+    # all normal connections.
+    conn.execute("PRAGMA foreign_keys = OFF")
 
     with conn:
         _migrate_accounts_table(conn)
@@ -166,6 +329,8 @@ def init_db():
         _migrate_income_last_pay_date(conn)
         _migrate_expenses_last_paid_date(conn)
         _migrate_settings_default_payment(conn)
+        _migrate_money_to_cents(conn)
+        _migrate_snapshot_timestamps(conn)
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -180,10 +345,10 @@ def init_db():
             user_id         INTEGER NOT NULL REFERENCES users(id),
             name            TEXT NOT NULL,
             type            TEXT NOT NULL,
-            balance         REAL NOT NULL DEFAULT 0,
+            balance         INTEGER NOT NULL DEFAULT 0,
             interest_rate   REAL NOT NULL DEFAULT 0,
-            minimum_payment REAL,
-            credit_limit    REAL,
+            minimum_payment INTEGER,
+            credit_limit    INTEGER,
             due_date        TEXT,
             is_active       INTEGER NOT NULL DEFAULT 1,
             created_at      TEXT NOT NULL,
@@ -195,8 +360,8 @@ def init_db():
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id    INTEGER NOT NULL REFERENCES accounts(id),
             user_id       INTEGER NOT NULL REFERENCES users(id),
-            balance       REAL NOT NULL,
-            payment_made  REAL,
+            balance       INTEGER NOT NULL,
+            payment_made  INTEGER,
             note          TEXT,
             recorded_at   TEXT NOT NULL
         );
@@ -205,7 +370,7 @@ def init_db():
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id       INTEGER NOT NULL REFERENCES users(id),
             name          TEXT NOT NULL,
-            amount        REAL NOT NULL,
+            amount        INTEGER NOT NULL,
             category      TEXT,
             due_day       INTEGER CHECK(due_day IS NULL OR due_day BETWEEN 1 AND 28),
             is_active     INTEGER NOT NULL DEFAULT 1,
@@ -218,7 +383,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS user_settings (
             id                          INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
-            min_checking                REAL NOT NULL DEFAULT 0,
+            min_checking                INTEGER NOT NULL DEFAULT 0,
             default_payment_account_id  INTEGER REFERENCES accounts(id),
             payment_account_configured  INTEGER NOT NULL DEFAULT 0,
             updated_at                  TEXT NOT NULL
@@ -228,13 +393,32 @@ def init_db():
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id         INTEGER NOT NULL REFERENCES users(id),
             name            TEXT NOT NULL,
-            amount          REAL NOT NULL,
+            amount          INTEGER NOT NULL,
             frequency       TEXT NOT NULL,
             income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 28),
             last_pay_date   TEXT,
             is_active       INTEGER NOT NULL DEFAULT 1,
             created_at      TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS events (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL REFERENCES users(id),
+            entity_type     TEXT NOT NULL,
+            entity_id       INTEGER NOT NULL,
+            action          TEXT NOT NULL,
+            changes         TEXT,
+            amount_delta    INTEGER,
+            source          TEXT NOT NULL,
+            source_detail   TEXT,
+            correlation_id  TEXT,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_events_user_created
+            ON events(user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_events_user_entity
+            ON events(user_id, entity_type, entity_id);
     """)
     conn.commit()
     conn.close()

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
-import { formatMoney, formatDate, formatFrequency, monthlyEquiv, nextPayday } from '../lib/utils'
+import { formatMoney, formatDate, formatFrequency, monthlyEquiv, nextPayday, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useIncome } from '../hooks/useIncome'
 import { useToast } from '../context/ToastContext'
 import { FREQUENCIES } from '../lib/constants'
@@ -203,7 +203,7 @@ export default function Income() {
   function buildPayload(form) {
     const payload = {
       name: form.name.trim(),
-      amount: parseFloat(form.amount) || 0,
+      amount: dollarsToCents(form.amount) ?? 0,
       frequency: form.frequency,
     }
     if (form.income_day !== '') payload.income_day = parseInt(form.income_day, 10)
@@ -295,7 +295,7 @@ export default function Income() {
   function openEdit(item) {
     setEditForm({
       name: item.name || '',
-      amount: item.amount ?? '',
+      amount: centsToDollarInput(item.amount),
       frequency: item.frequency || 'monthly',
       income_day: item.income_day ?? '',
       last_pay_date: item.last_pay_date || '',

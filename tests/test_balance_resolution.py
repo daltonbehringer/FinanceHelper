@@ -14,8 +14,8 @@ def _account(client, account_id):
 
 
 def test_falls_back_to_accounts_balance_with_no_snapshots(client, user_a):
-    acct = make_account(user_a, balance=1234.56)
-    assert _account(client, acct)["current_balance"] == 1234.56
+    acct = make_account(user_a, balance=123456)  # $1,234.56 in cents
+    assert _account(client, acct)["current_balance"] == 123456
 
 
 def test_uses_latest_snapshot_over_accounts_balance(client, user_a):

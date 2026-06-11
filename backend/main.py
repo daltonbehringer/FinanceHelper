@@ -20,6 +20,7 @@ from backend.routers.accounts import router as accounts_router
 from backend.routers.ai import router as ai_router
 from backend.routers.expenses import router as expenses_router
 from backend.routers.income import router as income_router
+from backend.routers.meta import router as meta_router
 from backend.routers.settings import router as settings_router
 from backend.routers.snapshots import router as snapshots_router
 
@@ -63,6 +64,7 @@ app.include_router(snapshots_router)
 app.include_router(ai_router)
 app.include_router(expenses_router)
 app.include_router(income_router)
+app.include_router(meta_router)
 app.include_router(settings_router)
 
 if FRONTEND_DIST.exists():
@@ -73,8 +75,8 @@ if FRONTEND_DIST.exists():
 async def spa_fallback(full_path: str):
     if not FRONTEND_DIST.exists():
         return {"detail": "Frontend not built. Run 'npm run build' in /frontend."}
-    # Don't intercept API or auth routes — let them 404 naturally
-    if full_path.startswith("api/") or full_path.startswith("auth/"):
+    # Don't intercept API routes — let them 404 naturally
+    if full_path.startswith("api/"):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"detail": "Not found"})
     file_path = FRONTEND_DIST / full_path

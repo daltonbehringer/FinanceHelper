@@ -1,17 +1,5 @@
-export const ACCOUNT_TYPES = [
-  { value: 'checking', label: 'Checking' },
-  { value: 'savings', label: 'Savings' },
-  { value: 'credit_card', label: 'Credit Card' },
-  { value: 'loan', label: 'Loan' },
-  { value: 'mortgage', label: 'Mortgage' },
-  { value: 'line_of_credit', label: 'Line of Credit' },
-  { value: '401k', label: '401(k)' },
-  { value: 'ira', label: 'IRA' },
-  { value: 'roth_ira', label: 'Roth IRA' },
-  { value: 'brokerage', label: 'Brokerage' },
-  { value: 'hsa', label: 'HSA' },
-  { value: 'other', label: 'Other' },
-]
+// Account types (and their per-type fields) now come from the backend registry:
+// GET /api/meta/account-fields via useAccountFields().
 
 export const FREQUENCIES = [
   { value: 'weekly', label: 'Weekly' },

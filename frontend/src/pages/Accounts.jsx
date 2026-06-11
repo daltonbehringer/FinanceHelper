@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { apiFetch } from '../lib/api'
-import { formatMoney, formatRate, formatDate, formatType, isDebt } from '../lib/utils'
+import { formatMoney, formatRate, formatDate, formatType, isDebt, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useAccounts } from '../hooks/useAccounts'
+import { useAccountFields } from '../hooks/useAccountFields'
 import { useToast } from '../context/ToastContext'
-import { ACCOUNT_TYPES, INVESTMENT_TYPES } from '../lib/constants'
+import { INVESTMENT_TYPES } from '../lib/constants'
 import Button from '../components/ui/Button'
 import Card, { CardBody } from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
@@ -33,11 +34,16 @@ function typeBadgeColor(type) {
   return 'gray'
 }
 
-function AccountForm({ form, setForm, onSubmit, onCancel, loading, submitLabel }) {
+// Fields render dynamically from the backend registry (GET /api/meta/account-fields).
+// Account type is immutable after creation, so the type selector is locked in edit mode.
+function AccountForm({ form, setForm, fieldTypes, onSubmit, onCancel, loading, submitLabel, lockType = false }) {
   function handleChange(e) {
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
   }
+
+  const selectedType = fieldTypes.find(t => t.value === form.type)
+  const fields = selectedType ? selectedType.fields : []
 
   return (
     <form
@@ -61,75 +67,26 @@ function AccountForm({ form, setForm, onSubmit, onCancel, loading, submitLabel }
         value={form.type}
         onChange={handleChange}
         required
+        disabled={lockType}
       >
-        {ACCOUNT_TYPES.map(t => (
+        {fieldTypes.map(t => (
           <option key={t.value} value={t.value}>{t.label}</option>
         ))}
       </Select>
-      <Input
-        label="Balance *"
-        name="balance"
-        type="number"
-        step="0.01"
-        value={form.balance}
-        onChange={handleChange}
-        required
-        placeholder="0.00"
-      />
-      <Input
-        label="Interest Rate (%)"
-        name="interest_rate"
-        type="number"
-        step="0.01"
-        min="0"
-        value={form.interest_rate}
-        onChange={handleChange}
-        placeholder="0.00"
-      />
-      <Input
-        label="Minimum Payment"
-        name="minimum_payment"
-        type="number"
-        step="0.01"
-        min="0"
-        value={form.minimum_payment}
-        onChange={handleChange}
-        placeholder="0.00"
-      />
-      <Input
-        label="Credit Limit"
-        name="credit_limit"
-        type="number"
-        step="0.01"
-        min="0"
-        value={form.credit_limit}
-        onChange={handleChange}
-        placeholder="0.00"
-      />
-      <Input
-        label="Due Date"
-        name="due_date"
-        type="date"
-        value={form.due_date}
-        onChange={handleChange}
-      />
-      <Input
-        label="Promo Rate (%)"
-        name="promo_rate"
-        type="number"
-        step="0.01"
-        min="0"
-        value={form.promo_rate}
-        onChange={handleChange}
-        placeholder="0.00"
-      />
-      <Input
-        label="Promo End Date"
-        name="promo_end_date"
-        type="date"
-        value={form.promo_end_date}
-        onChange={handleChange}
-      />
+      {fields.map(f => (
+        <Input
+          key={f.name}
+          label={f.required ? `${f.label} *` : f.label}
+          name={f.name}
+          type={f.kind === 'date' ? 'date' : 'number'}
+          step={f.kind === 'date' ? undefined : '0.01'}
+          min={f.name === 'balance' || f.kind === 'date' ? undefined : '0'}
+          value={form[f.name] ?? ''}
+          onChange={handleChange}
+          required={f.required}
+          placeholder={f.kind === 'date' ? undefined : '0.00'}
+        />
+      ))}
       <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-3 pt-2">
         <Button type="submit" loading={loading}>
           {submitLabel}
@@ -210,6 +167,7 @@ export default function Accounts() {
   const [sortDir, setSortDir] = useState('asc')
 
   const { accounts, loading, refetch } = useAccounts(showInactive)
+  const { types: fieldTypes } = useAccountFields()
   const { showToast } = useToast()
 
   const sorted = useMemo(() => {
@@ -233,18 +191,23 @@ export default function Accounts() {
     }
   }
 
-  function buildPayload(form) {
-    const payload = {
-      name: form.name.trim(),
-      type: form.type,
-      balance: parseFloat(form.balance) || 0,
+  // Build the request from the registry's field list for the chosen type.
+  // Money inputs are dollars in the UI and integer cents on the wire.
+  function buildPayload(form, { includeType }) {
+    const payload = { name: form.name.trim() }
+    if (includeType) payload.type = form.type
+
+    const selectedType = fieldTypes.find(t => t.value === form.type)
+    for (const f of selectedType?.fields ?? []) {
+      const value = form[f.name]
+      if (f.name === 'balance') {
+        payload.balance = dollarsToCents(value) ?? 0
+      } else if (value !== '' && value != null) {
+        payload[f.name] = f.kind === 'money' ? dollarsToCents(value)
+          : f.kind === 'rate' ? parseFloat(value)
+          : value
+      }
     }
-    if (form.interest_rate !== '') payload.interest_rate = parseFloat(form.interest_rate)
-    if (form.minimum_payment !== '') payload.minimum_payment = parseFloat(form.minimum_payment)
-    if (form.credit_limit !== '') payload.credit_limit = parseFloat(form.credit_limit)
-    if (form.due_date) payload.due_date = form.due_date
-    if (form.promo_rate !== '') payload.promo_rate = parseFloat(form.promo_rate)
-    if (form.promo_end_date) payload.promo_end_date = form.promo_end_date
     return payload
   }
 
@@ -253,7 +216,7 @@ export default function Accounts() {
     try {
       const resp = await apiFetch('/api/accounts', {
         method: 'POST',
-        body: JSON.stringify(buildPayload(addForm)),
+        body: JSON.stringify(buildPayload(addForm, { includeType: true })),
       })
       if (resp && resp.ok) {
         showToast('Account created', 'success')
@@ -277,7 +240,8 @@ export default function Accounts() {
     try {
       const resp = await apiFetch(`/api/accounts/${editAccount.id}`, {
         method: 'PUT',
-        body: JSON.stringify(buildPayload(editForm)),
+        // type is immutable — never sent on update
+        body: JSON.stringify(buildPayload(editForm, { includeType: false })),
       })
       if (resp && resp.ok) {
         showToast('Account updated', 'success')
@@ -313,10 +277,10 @@ export default function Accounts() {
     setEditForm({
       name: account.name || '',
       type: account.type || 'checking',
-      balance: account.current_balance ?? account.balance ?? '',
+      balance: centsToDollarInput(account.current_balance ?? account.balance),
       interest_rate: account.interest_rate ?? '',
-      minimum_payment: account.minimum_payment ?? '',
-      credit_limit: account.credit_limit ?? '',
+      minimum_payment: centsToDollarInput(account.minimum_payment),
+      credit_limit: centsToDollarInput(account.credit_limit),
       due_date: account.due_date || '',
       promo_rate: account.promo_rate ?? '',
       promo_end_date: account.promo_end_date || '',
@@ -366,6 +330,7 @@ export default function Accounts() {
             <AccountForm
               form={addForm}
               setForm={setAddForm}
+              fieldTypes={fieldTypes}
               onSubmit={handleAdd}
               onCancel={() => setShowAddForm(false)}
               loading={addLoading}
@@ -507,6 +472,8 @@ export default function Accounts() {
         <AccountForm
           form={editForm}
           setForm={setEditForm}
+          fieldTypes={fieldTypes}
+          lockType
           onSubmit={handleEdit}
           onCancel={() => setEditAccount(null)}
           loading={editLoading}

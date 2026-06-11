@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
+import { dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useSettings } from '../hooks/useSettings'
 import { useAccounts } from '../hooks/useAccounts'
 import { useToast } from '../context/ToastContext'
@@ -20,7 +21,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (!loading) {
-      setMinChecking(settings.min_checking ? String(settings.min_checking) : '')
+      setMinChecking(settings.min_checking ? centsToDollarInput(settings.min_checking) : '')
       setDefaultPaymentAccountId(
         settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
       )
@@ -29,7 +30,7 @@ export default function Settings() {
 
   async function handleSave(e) {
     e.preventDefault()
-    const value = parseFloat(minChecking) || 0
+    const value = dollarsToCents(minChecking) ?? 0
     if (value < 0) {
       showToast('Minimum balance cannot be negative', 'error')
       return

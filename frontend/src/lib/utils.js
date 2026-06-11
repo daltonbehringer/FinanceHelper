@@ -1,10 +1,24 @@
-export function formatMoney(amount) {
-  if (amount == null) return '\u2014'
-  const sign = amount < 0 ? '-' : ''
-  return sign + '$' + Math.abs(amount).toLocaleString('en-US', {
+// All monetary values are integer cents end-to-end (API and storage).
+// Dollars only exist at the display/input boundary.
+export function formatMoney(cents) {
+  if (cents == null) return '\u2014'
+  const dollars = cents / 100
+  const sign = dollars < 0 ? '-' : ''
+  return sign + '$' + Math.abs(dollars).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+// Form-input boundary: dollar string <-> integer cents.
+export function dollarsToCents(value) {
+  const parsed = parseFloat(value)
+  return Number.isNaN(parsed) ? null : Math.round(parsed * 100)
+}
+
+export function centsToDollarInput(cents) {
+  if (cents == null || cents === '') return ''
+  return String(cents / 100)
 }
 
 export function formatRate(rate) {
