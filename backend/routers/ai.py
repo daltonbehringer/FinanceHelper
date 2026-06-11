@@ -325,12 +325,30 @@ def _budget_breakdown(user_id: int) -> str:
     )
 
 
+def _next_payday_info(income: list[dict], today: date):
+    """Soonest upcoming payday across all income sources.
+    Returns (date, amount_cents, name, frequency) or None."""
+    best = None
+    for inc in income:
+        np = next_payday(inc.get("last_pay_date"), inc.get("frequency", "monthly"))
+        if not np:
+            continue
+        d = date.fromisoformat(np)
+        if best is None or d < best[0]:
+            best = (d, inc["amount"], inc["name"], inc.get("frequency", "monthly"))
+    return best
+
+
 def _safe_to_spend_block(user_id: int) -> str:
-    """Reserved-for-bills + safe-to-spend, so the advisor reasons against money
-    that isn't already spoken for. Empty when there's nothing to reserve."""
+    """Reserved-for-bills + safe-to-spend, framed PER PAY PERIOD so the advisor
+    reasons against money that isn't already spoken for, paycheck by paycheck.
+    Empty when there's nothing to reserve."""
     accounts = _get_accounts_for_user(user_id)
     settings = _get_user_settings(user_id)
-    reserves = compute_reserves(_get_expenses_for_user(user_id), date.today())
+    expenses = _get_expenses_for_user(user_id)
+    income = _get_income_for_user(user_id)
+    today = date.today()
+    reserves = compute_reserves(expenses, today)
     reserved_total = reserves["total"]
     floor = settings.get("min_checking") or 0
     if not floor and not reserved_total:
@@ -356,13 +374,36 @@ def _safe_to_spend_block(user_id: int) -> str:
     if reserved_total:
         detail = ", ".join(f"{b['name']} {_fmt_cents(b['reserved'])}" for b in reserves["bills"])
         lines.append(f"  Reserved for upcoming bills: {_fmt_cents(reserved_total)} ({detail})")
-    lines.append(f"  => Safe to spend: {_fmt_cents(sts)}")
+    lines.append(f"  => Safe to spend now: {_fmt_cents(sts)}")
     if floor:
-        lines.append(f"  Spending money (target for groceries, gas, variable costs): {_fmt_cents(floor)}")
+        lines.append(f"  Spending money (variable-expense budget): {_fmt_cents(floor)}/month")
+        lines.append(f"  => Monthly surplus for debt/savings: {_fmt_cents(sts - floor)}")
+
+    # Per-paycheck framing: spend down only to what must be set aside by the next
+    # payday (this period's bills in full + the accrued portion of upcoming ones).
+    next_pd = _next_payday_info(income, today)
+    if next_pd:
+        pd_date, pd_amount, pd_name, pd_freq = next_pd
+        reserved_by_payday = compute_reserves(expenses, pd_date)["total"]
+        spendable_period = checking_balance - reserved_by_payday
+        lines.append("")
+        lines.append("FRAME SPENDING PER PAYCHECK, not per month — the user lives pay period to pay period:")
+        lines.append(f"  Next paycheck: {pd_date.isoformat()} ({_fmt_cents(pd_amount)} from {pd_name}, {pd_freq})")
         lines.append(
-            f"  => Surplus for debt/savings (safe-to-spend minus spending money): {_fmt_cents(sts - floor)}"
+            f"  Safe to spend BEFORE that paycheck (balance minus everything that must be set "
+            f"aside by then): {_fmt_cents(spendable_period)}"
         )
-        lines.append("Recommend extra debt or savings ONLY from that surplus; never push "
+        if floor:
+            per_paycheck_floor = round(floor / MONTHLY_MULTIPLIERS.get(pd_freq, 1.0))
+            lines.append(f"  ~ this period's spending money (variable budget): {_fmt_cents(per_paycheck_floor)}")
+            lines.append(
+                f"  => surplus to direct at debt/savings this period: "
+                f"{_fmt_cents(spendable_period - per_paycheck_floor)}"
+            )
+        lines.append("State affordability as what's safe to spend before the next paycheck (with its date), "
+                     "not a monthly figure. Recommend extra debt/savings only from this period's surplus.")
+    elif floor:
+        lines.append("Recommend extra debt or savings ONLY from the surplus; never push "
                      "safe-to-spend below the spending money.")
     return "\n".join(lines)
 
@@ -425,6 +466,9 @@ ANSWERING:
 - Judge what the user can afford against SAFE TO SPEND below, never the raw checking \
 balance. Recommend extra debt or savings only from the surplus above the user's spending \
 money; never push safe-to-spend below the spending money.
+- Frame affordability PER PAYCHECK, not per month: say what's safe to spend before the next \
+paycheck (name its date), using the per-paycheck figures in SAFE TO SPEND below. The user \
+budgets pay period to pay period, not in monthly lumps.
 - Prefer the debt avalanche method (highest rate first) unless the situation argues \
 otherwise. Always give concrete dollar amounts and timing; never vague advice.
 - Don't put a whole large bill on one paycheck if it can be spread — fund big bills across \
