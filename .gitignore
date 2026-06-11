@@ -15,3 +15,5 @@ tests/__pycache__/
 PHASE0-FINDINGS.md
 tasks/todo.md
 PHASE1-FINDINGS.md
+PHASE2-FINDINGS.md
+tests/evals/artifacts/

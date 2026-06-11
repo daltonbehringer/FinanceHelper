@@ -419,6 +419,27 @@ def init_db():
             ON events(user_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_events_user_entity
             ON events(user_id, entity_type, entity_id);
+
+        -- Server-held confirmation gate for LLM-proposed writes (Phase 2).
+        -- One row per proposed action; single-use, short expiry. The frozen
+        -- preview executes as shown; basis_json holds the prev balances the
+        -- proposal's math used, recompared at confirm time (staleness guard).
+        CREATE TABLE IF NOT EXISTS pending_actions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id          INTEGER NOT NULL REFERENCES users(id),
+            tool_name        TEXT NOT NULL,
+            tool_input_json  TEXT NOT NULL,
+            preview_json     TEXT NOT NULL,
+            basis_json       TEXT NOT NULL,
+            messages_json    TEXT,
+            created_at       TEXT NOT NULL,
+            expires_at       TEXT NOT NULL,
+            status           TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending','executing','executed','declined','expired'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pending_actions_user_status
+            ON pending_actions(user_id, status);
     """)
     conn.commit()
     conn.close()

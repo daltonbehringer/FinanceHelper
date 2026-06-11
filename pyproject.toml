@@ -1,6 +1,10 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# test_llm_trace.py hits the real Anthropic API and is a manual script, not a
-# unit test — exclude it from collection so CI never makes paid network calls.
-addopts = "--ignore=tests/test_llm_trace.py"
+# The llm_eval suite (tests/evals/) drives the real Anthropic API and is run
+# manually/nightly — deselect it by default so CI makes no paid network calls.
+# (The Phase-1 test_llm_trace.py manual script retired into that suite.)
+addopts = "-m 'not llm_eval'"
+markers = [
+    "llm_eval: end-to-end eval against the real Anthropic API (paid; run manually)",
+]

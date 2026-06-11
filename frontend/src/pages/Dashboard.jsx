@@ -2,13 +2,12 @@ import { useState } from 'react'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenses } from '../hooks/useExpenses'
 import { useToast } from '../context/ToastContext'
-import { apiFetch } from '../lib/api'
+import { apiStream } from '../lib/api'
 import {
   formatMoney,
   formatDate,
   formatType,
   isDebt,
-  formatRecommendation,
 } from '../lib/utils'
 import StatCard from '../components/ui/StatCard'
 import Card, { CardHeader, CardBody } from '../components/ui/Card'
@@ -16,7 +15,10 @@ import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Spinner from '../components/ui/Spinner'
 import EmptyState from '../components/ui/EmptyState'
+import Markdown from '../components/ui/Markdown'
 import AdvisorChat from '../components/dashboard/AdvisorChat'
+
+const RECOMMEND_PROMPT = 'What should I prioritize this month?'
 
 const INVESTMENT_TYPES = ['401k', 'ira', 'roth_ira', 'brokerage', 'hsa']
 
@@ -62,46 +64,6 @@ function AccountCard({ account }) {
   )
 }
 
-function RecommendationContent({ items }) {
-  return (
-    <div className="space-y-1">
-      {items.map((item) => {
-        switch (item.type) {
-          case 'heading':
-            return (
-              <div key={item.key} className="font-bold text-gray-900 text-sm pt-2 first:pt-0">
-                {item.text}
-              </div>
-            )
-          case 'bullet':
-            return (
-              <div key={item.key} className="pl-4 text-sm text-gray-700 flex gap-2">
-                <span className="text-gray-400 select-none">&bull;</span>
-                <span>{item.text}</span>
-              </div>
-            )
-          case 'numbered':
-            return (
-              <div key={item.key} className="pl-4 text-sm text-gray-700">
-                {item.text}
-              </div>
-            )
-          case 'paragraph':
-            return (
-              <p key={item.key} className="text-sm text-gray-700">
-                {item.text}
-              </p>
-            )
-          case 'spacer':
-            return <div key={item.key} className="h-2" />
-          default:
-            return null
-        }
-      })}
-    </div>
-  )
-}
-
 export default function Dashboard() {
   const { accounts, loading: accountsLoading, refetch: refetchAccounts } = useAccounts()
   const { expenses, loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
@@ -138,26 +100,19 @@ export default function Dashboard() {
     .filter((e) => e.is_recurring !== 0)
     .reduce((sum, e) => sum + (e.amount ?? 0), 0)
 
-  // Recommendation actions
+  // Recommendation: folded into the chat endpoint (Phase 2). The canned
+  // monthly-plan prompt streams back markdown text; no tool/confirmation.
   async function handleGetRecommendation() {
     setRecLoading(true)
     setRecommendation(null)
-    try {
-      const resp = await apiFetch('/api/ai/recommend', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      if (!resp || !resp.ok) {
-        showToast('Failed to get recommendation', 'error')
-        return
-      }
-      const data = await resp.json()
-      setRecommendation(data.recommendation)
-    } catch {
-      showToast('Failed to get recommendation', 'error')
-    } finally {
-      setRecLoading(false)
-    }
+    let acc = ''
+    let failed = false
+    await apiStream('/api/ai/chat', { messages: [{ role: 'user', content: RECOMMEND_PROMPT }] }, {
+      onText: (delta) => { acc += delta; setRecommendation(acc) },
+      onError: () => { failed = true },
+    })
+    if (failed && !acc) showToast('Failed to get recommendation', 'error')
+    setRecLoading(false)
   }
 
   function handleSavePdf() {
@@ -278,14 +233,14 @@ export default function Dashboard() {
                 <Spinner className="text-gray-400" />
               </div>
             ) : (
-              <RecommendationContent items={formatRecommendation(recommendation)} />
+              <Markdown>{recommendation}</Markdown>
             )}
           </CardBody>
         </Card>
       )}
 
       {/* Advisor Chat */}
-      <AdvisorChat accounts={accounts} expenses={expenses} onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
+      <AdvisorChat onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
 
       {/* Account sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

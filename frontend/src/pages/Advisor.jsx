@@ -4,8 +4,8 @@ import AdvisorChat from '../components/dashboard/AdvisorChat'
 import Spinner from '../components/ui/Spinner'
 
 export default function Advisor() {
-  const { accounts, loading, refetch } = useAccounts()
-  const { expenses, refetch: refetchExpenses } = useExpenses()
+  const { loading, refetch } = useAccounts()
+  const { refetch: refetchExpenses } = useExpenses()
 
   return (
     <div className="space-y-6">
@@ -21,7 +21,7 @@ export default function Advisor() {
           <Spinner size="lg" className="text-accent" />
         </div>
       ) : (
-        <AdvisorChat accounts={accounts} expenses={expenses} onUpdate={refetch} onExpenseUpdate={refetchExpenses} />
+        <AdvisorChat onUpdate={refetch} onExpenseUpdate={refetchExpenses} />
       )}
     </div>
   )

@@ -124,6 +124,53 @@ def create_snapshot(
     return snapshot
 
 
+def record_balance_update(
+    user_id: int,
+    account_id: int,
+    *,
+    new_balance: int,
+    payment_made: int | None = None,
+    source_account_id: int | None = None,
+    source_new_balance: int | None = None,
+    note: str | None = None,
+    ctx: EventContext,
+) -> dict:
+    """Apply an LLM/manual balance change as one atomic, correlated action.
+
+    Thin executor over ``create_snapshot_tx`` mirroring ``pay_expense``: the
+    target snapshot and the optional source-account snapshot commit in ONE
+    transaction under a shared correlation_id. This is the single
+    snapshot-creating service both the tool path and the manual "edit balance"
+    path converge on (handoff decision #10).
+
+    Frozen-value contract: callers pass the already-resolved ``new_balance`` (and
+    ``source_new_balance``); this function does NOT recompute the interest/
+    principal split. Proposal-time resolution (backend/lib/money.py) computes
+    those; the pending-action basis guard defends against staleness.
+    """
+    ctx = with_correlation(ctx)
+    conn = get_db()
+    try:
+        with conn:
+            snapshot = create_snapshot_tx(
+                conn, user_id, account_id=account_id, balance=new_balance,
+                payment_made=payment_made, note=note, ctx=ctx,
+            )
+            # Deduct from the funding source (e.g. checking), same correlation_id.
+            if source_account_id is not None and source_new_balance is not None:
+                create_snapshot_tx(
+                    conn, user_id,
+                    account_id=source_account_id,
+                    balance=source_new_balance,
+                    payment_made=payment_made,
+                    note=note,
+                    ctx=ctx,
+                )
+    finally:
+        conn.close()
+    return snapshot
+
+
 def restore_snapshot(user_id: int, snapshot_id: int, ctx: EventContext) -> dict:
     ctx = with_correlation(ctx)
     conn = get_db()

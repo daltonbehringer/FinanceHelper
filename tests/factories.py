@@ -7,7 +7,8 @@ Phase 1: all monetary values are INTEGER CENTS (e.g. balance=100000 is $1,000).
 Snapshot recorded_at defaults to a full ISO UTC timestamp.
 """
 
-from datetime import date
+import json
+from datetime import date, datetime, timedelta, timezone
 
 from backend.db import execute
 from backend.lib.dates import utc_now_iso
@@ -111,6 +112,42 @@ def make_income(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (user_id, name, amount, frequency, income_day, last_pay_date, is_active, created_at),
+    )
+    return cur.lastrowid
+
+
+def make_pending_action(
+    user_id,
+    tool_name="record_balance_update",
+    tool_input=None,
+    preview=None,
+    basis=None,
+    messages=None,
+    created_at=None,
+    expires_at=None,
+    status="pending",
+    expires_in_minutes=10,
+):
+    """Insert a pending_actions row. JSON columns accept dicts/lists and are
+    serialized here. By default the action expires 10 minutes from now.
+    """
+    now = datetime.now(timezone.utc)
+    if created_at is None:
+        created_at = now.isoformat()
+    if expires_at is None:
+        expires_at = (now + timedelta(minutes=expires_in_minutes)).isoformat()
+    cur = execute(
+        """
+        INSERT INTO pending_actions (user_id, tool_name, tool_input_json, preview_json,
+                                     basis_json, messages_json, created_at, expires_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, tool_name,
+         json.dumps(tool_input or {}),
+         json.dumps(preview or {}),
+         json.dumps(basis or {}),
+         json.dumps(messages) if messages is not None else None,
+         created_at, expires_at, status),
     )
     return cur.lastrowid
 

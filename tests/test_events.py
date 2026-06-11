@@ -128,15 +128,18 @@ def test_snapshot_delete_event(client, user_a):
     assert ev["changes"]["balance"] == 700  # full object snapshot
 
 
-def test_llm_source_is_recorded(client, user_a):
+def test_snapshot_endpoint_ignores_client_supplied_source(client, user_a):
+    # Phase 2: provenance is no longer client-supplied. This endpoint serves the
+    # manual UI only and always records source="user", even if a client forges a
+    # "source" field. (LLM provenance is set server-side; see test_advisor_flow.)
     acct = make_account(user_a, type="credit_card", balance=1000)
     client.post("/api/snapshots", json={
         "account_id": acct, "balance": 900, "payment_made": 100,
         "source": "llm", "source_detail": "balance_update",
     })
     (ev,) = _events(user_a, "snapshot")
-    assert ev["source"] == "llm"
-    assert ev["source_detail"] == "balance_update"
+    assert ev["source"] == "user"
+    assert ev["source_detail"] is None
 
 
 # --- expenses --------------------------------------------------------------------

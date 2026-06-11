@@ -127,15 +127,3 @@ export function nextDueDate(dueDay, lastPaidDate) {
   }
   return formatDate(candidate.toISOString().split('T')[0])
 }
-
-export function formatRecommendation(text) {
-  if (!text) return []
-  return text.split('\n').map((line, i) => {
-    const trimmed = line.trim()
-    if (!trimmed) return { type: 'spacer', key: i }
-    if (/^#{1,3}\s/.test(trimmed)) return { type: 'heading', text: trimmed.replace(/^#+\s*/, ''), key: i }
-    if (/^[-*]\s/.test(trimmed)) return { type: 'bullet', text: trimmed.replace(/^[-*]\s*/, ''), key: i }
-    if (/^\d+\.\s/.test(trimmed)) return { type: 'numbered', text: trimmed, key: i }
-    return { type: 'paragraph', text: trimmed, key: i }
-  })
-}

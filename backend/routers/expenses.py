@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, StrictInt
@@ -81,9 +81,9 @@ class ExpensePayRequest(BaseModel):
     source_account_id: Optional[int] = None
     source_new_balance: Optional[StrictInt] = None  # integer cents
     note: Optional[str] = None
-    # Provenance for the event log (AI chat flow tags its writes as LLM-originated).
-    source: Literal["user", "llm"] = "user"
-    source_detail: Optional[str] = None
+    # Provenance is no longer client-supplied (Phase 2): this endpoint serves the
+    # manual UI only and is always "user". The LLM path pays expenses server-side
+    # through backend/services with source="llm".
 
 
 @router.post("/{expense_id}/pay")
@@ -96,5 +96,5 @@ async def pay_expense(
         source_account_id=body.source_account_id,
         source_new_balance=body.source_new_balance,
         note=body.note,
-        ctx=EventContext(source=body.source, source_detail=body.source_detail),
+        ctx=EventContext(source="user"),
     )

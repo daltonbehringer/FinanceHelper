@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, StrictInt
@@ -16,10 +16,9 @@ class SnapshotCreate(BaseModel):
     balance: StrictInt  # integer cents; floats are rejected
     payment_made: Optional[StrictInt] = None
     note: Optional[str] = None
-    # Provenance for the event log: the AI chat flow confirms its writes
-    # through this endpoint, so it tags them as LLM-originated.
-    source: Literal["user", "llm"] = "user"
-    source_detail: Optional[str] = None
+    # Provenance is no longer client-supplied (Phase 2): this endpoint serves the
+    # manual UI only and is always "user". LLM-originated writes go server-side
+    # through backend/services with source="llm" set by backend/routers/ai.py.
 
 
 @router.get("")
@@ -50,7 +49,7 @@ async def create_snapshot(body: SnapshotCreate, user_id: int = Depends(get_curre
         balance=body.balance,
         payment_made=body.payment_made,
         note=body.note,
-        ctx=EventContext(source=body.source, source_detail=body.source_detail),
+        ctx=EventContext(source="user"),
     )
 
 

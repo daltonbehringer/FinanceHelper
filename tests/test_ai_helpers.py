@@ -10,21 +10,8 @@ from backend.lib.dates import next_expense_due
 from backend.routers.ai import (
     MONTHLY_MULTIPLIERS,
     _build_financial_context,
-    _strip_markdown_fencing,
 )
 from tests.factories import make_account, make_expense, make_income
-
-
-def test_strip_markdown_fencing_json_block():
-    assert _strip_markdown_fencing('```json\n{"a": 1}\n```') == '{"a": 1}'
-
-
-def test_strip_markdown_fencing_plain_block():
-    assert _strip_markdown_fencing('```\nhello\n```') == 'hello'
-
-
-def test_strip_markdown_fencing_no_fence():
-    assert _strip_markdown_fencing('  {"a": 1}  ') == '{"a": 1}'
 
 
 def test_monthly_multipliers():
