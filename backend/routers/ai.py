@@ -348,7 +348,7 @@ def _safe_to_spend_block(user_id: int) -> str:
     expenses = _get_expenses_for_user(user_id)
     income = _get_income_for_user(user_id)
     today = date.today()
-    reserves = compute_reserves(expenses, today)
+    reserves = compute_reserves(expenses, income, today)
     reserved_total = reserves["total"]
     floor = settings.get("min_checking") or 0
     if not floor and not reserved_total:
@@ -372,36 +372,42 @@ def _safe_to_spend_block(user_id: int) -> str:
         f"  {label} balance: {_fmt_cents(checking_balance)}",
     ]
     if reserved_total:
-        detail = ", ".join(f"{b['name']} {_fmt_cents(b['reserved'])}" for b in reserves["bills"])
-        lines.append(f"  Reserved for upcoming bills: {_fmt_cents(reserved_total)} ({detail})")
+        parts = []
+        for b in reserves["bills"]:
+            p = f"{b['name']} {_fmt_cents(b['reserved'])}"
+            if b.get("per_paycheck"):
+                p += f" (setting aside {_fmt_cents(b['per_paycheck'])}/check)"
+            parts.append(p)
+        lines.append(f"  Reserved for upcoming bills: {_fmt_cents(reserved_total)} ({', '.join(parts)})")
     lines.append(f"  => Safe to spend now: {_fmt_cents(sts)}")
     if floor:
         lines.append(f"  Spending money (variable-expense budget): {_fmt_cents(floor)}/month")
         lines.append(f"  => Monthly surplus for debt/savings: {_fmt_cents(sts - floor)}")
 
-    # Per-paycheck framing: spend down only to what must be set aside by the next
-    # payday (this period's bills in full + the accrued portion of upcoming ones).
+    # Per-paycheck framing: before the next paycheck the user must keep this
+    # period's bills (in full) plus what they've ALREADY set aside for later bills
+    # (reserves are paycheck-stepped, so they don't grow until the next check).
     next_pd = _next_payday_info(income, today)
     if next_pd:
         pd_date, pd_amount, pd_name, pd_freq = next_pd
-        reserved_by_payday = compute_reserves(expenses, pd_date)["total"]
-        spendable_period = checking_balance - reserved_by_payday
+        pd_iso = pd_date.isoformat()
+        bills_due_before = sum(b["amount"] for b in reserves["bills"] if b["due"] <= pd_iso)
+        reserved_later = sum(b["reserved"] for b in reserves["bills"] if b["due"] > pd_iso)
+        spendable_before = checking_balance - bills_due_before - reserved_later
         lines.append("")
         lines.append("FRAME SPENDING PER PAYCHECK, not per month — the user lives pay period to pay period:")
-        lines.append(f"  Next paycheck: {pd_date.isoformat()} ({_fmt_cents(pd_amount)} from {pd_name}, {pd_freq})")
-        lines.append(
-            f"  Safe to spend BEFORE that paycheck (balance minus everything that must be set "
-            f"aside by then): {_fmt_cents(spendable_period)}"
-        )
+        lines.append(f"  Next paycheck: {pd_iso} ({_fmt_cents(pd_amount)} from {pd_name}, {pd_freq})")
+        lines.append(f"  Safe to spend before then: {_fmt_cents(spendable_before)}")
         if floor:
             per_paycheck_floor = round(floor / MONTHLY_MULTIPLIERS.get(pd_freq, 1.0))
             lines.append(f"  ~ this period's spending money (variable budget): {_fmt_cents(per_paycheck_floor)}")
             lines.append(
                 f"  => surplus to direct at debt/savings this period: "
-                f"{_fmt_cents(spendable_period - per_paycheck_floor)}"
+                f"{_fmt_cents(spendable_before - per_paycheck_floor)}"
             )
-        lines.append("State affordability as what's safe to spend before the next paycheck (with its date), "
-                     "not a monthly figure. Recommend extra debt/savings only from this period's surplus.")
+        lines.append("State affordability as what's safe to spend before the next paycheck (name its date), "
+                     "not a monthly figure. Reserves are paycheck-stepped — a fixed share of each bill is "
+                     "set aside per check. Recommend extra debt/savings only from this period's surplus.")
     elif floor:
         lines.append("Recommend extra debt or savings ONLY from the surplus; never push "
                      "safe-to-spend below the spending money.")
