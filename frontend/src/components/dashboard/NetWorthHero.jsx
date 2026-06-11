@@ -15,7 +15,7 @@ const PRESETS = [
 ]
 
 export default function NetWorthHero({ series, loading }) {
-  const [range, setRange] = useState('1Y')
+  const [range, setRange] = useState('3M')
 
   // Current net worth + this-month delta from the (ascending) series.
   const { current, delta } = useMemo(() => {

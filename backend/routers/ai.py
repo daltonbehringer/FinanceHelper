@@ -25,7 +25,7 @@ from backend.auth import get_current_user
 from backend.db import fetchall, fetchone
 from backend.lib.dates import next_expense_due, next_payday, utc_now_iso
 from backend.lib.money import split_installment_payment
-from backend.lib.reserves import compute_reserves, safe_to_spend
+from backend.lib.reserves import safe_to_spend_summary
 from backend.rate_limit import limiter
 from backend.services._core import EventContext
 from backend.services.expenses import pay_expense
@@ -325,20 +325,6 @@ def _budget_breakdown(user_id: int) -> str:
     )
 
 
-def _next_payday_info(income: list[dict], today: date):
-    """Soonest upcoming payday across all income sources.
-    Returns (date, amount_cents, name, frequency) or None."""
-    best = None
-    for inc in income:
-        np = next_payday(inc.get("last_pay_date"), inc.get("frequency", "monthly"))
-        if not np:
-            continue
-        d = date.fromisoformat(np)
-        if best is None or d < best[0]:
-            best = (d, inc["amount"], inc["name"], inc.get("frequency", "monthly"))
-    return best
-
-
 def _safe_to_spend_block(user_id: int) -> str:
     """Reserved-for-bills + safe-to-spend, framed PER PAY PERIOD so the advisor
     reasons against money that isn't already spoken for, paycheck by paycheck.
@@ -348,24 +334,21 @@ def _safe_to_spend_block(user_id: int) -> str:
     expenses = _get_expenses_for_user(user_id)
     income = _get_income_for_user(user_id)
     today = date.today()
-    reserves = compute_reserves(expenses, income, today)
-    reserved_total = reserves["total"]
-    floor = settings.get("min_checking") or 0
+    # Shared with the dashboard's safe-to-spend tile (backend/lib/reserves.py) so
+    # the prompt figure and the UI tile can never drift.
+    summary = safe_to_spend_summary(accounts, settings, expenses, income, today)
+    reserves_bills = summary["bills"]
+    reserved_total = summary["reserved_total"]
+    floor = summary["floor"]
     if not floor and not reserved_total:
         return ""
-
-    default_id = settings.get("default_payment_account_id")
-    checking_accts = [a for a in accounts if a["type"] == "checking"]
-    src = next((a for a in accounts if a["id"] == default_id), None) if default_id else None
-    if src:
-        checking_balance, label = src["current_balance"], src["name"]
-    elif checking_accts:
-        checking_balance = sum(a["current_balance"] for a in checking_accts)
-        label = "Checking"
-    else:
+    if summary["checking_balance"] is None:
         return ""
 
-    sts = safe_to_spend(checking_balance, reserved_total)
+    checking_balance = summary["checking_balance"]
+    label = summary["checking_label"]
+
+    sts = summary["safe_to_spend_now"]
     lines = [
         "SAFE TO SPEND — money available for everyday/variable spending "
         "(judge affordability against THIS, not the raw balance):",
@@ -373,7 +356,7 @@ def _safe_to_spend_block(user_id: int) -> str:
     ]
     if reserved_total:
         parts = []
-        for b in reserves["bills"]:
+        for b in reserves_bills:
             p = f"{b['name']} {_fmt_cents(b['reserved'])}"
             if b.get("per_paycheck"):
                 p += f" (setting aside {_fmt_cents(b['per_paycheck'])}/check)"
@@ -387,13 +370,11 @@ def _safe_to_spend_block(user_id: int) -> str:
     # Per-paycheck framing: before the next paycheck the user must keep this
     # period's bills (in full) plus what they've ALREADY set aside for later bills
     # (reserves are paycheck-stepped, so they don't grow until the next check).
-    next_pd = _next_payday_info(income, today)
+    next_pd = summary["next_payday"]
     if next_pd:
-        pd_date, pd_amount, pd_name, pd_freq = next_pd
-        pd_iso = pd_date.isoformat()
-        bills_due_before = sum(b["amount"] for b in reserves["bills"] if b["due"] <= pd_iso)
-        reserved_later = sum(b["reserved"] for b in reserves["bills"] if b["due"] > pd_iso)
-        spendable_before = checking_balance - bills_due_before - reserved_later
+        pd_iso = next_pd["date"]
+        pd_amount, pd_name, pd_freq = next_pd["amount"], next_pd["name"], next_pd["frequency"]
+        spendable_before = summary["available"]
         lines.append("")
         lines.append("FRAME SPENDING PER PAYCHECK, not per month — the user lives pay period to pay period:")
         lines.append(f"  Next paycheck: {pd_iso} ({_fmt_cents(pd_amount)} from {pd_name}, {pd_freq})")

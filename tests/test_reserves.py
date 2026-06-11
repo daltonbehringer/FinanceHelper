@@ -5,11 +5,14 @@ Pure, deterministic (today is passed in). No DB or API.
 
 from datetime import date
 
+import backend.lib.reserves as reserves
 from backend.lib.reserves import (
     compute_reserves,
     count_paydays,
     reserved_for_bill,
     safe_to_spend,
+    safe_to_spend_summary,
+    select_checking,
 )
 
 BIWEEKLY = [{"name": "Pay", "amount": 200000, "frequency": "biweekly", "last_pay_date": "2026-06-06"}]
@@ -97,3 +100,53 @@ def test_safe_to_spend_is_balance_minus_reserves():
 
 def test_safe_to_spend_can_go_negative():
     assert safe_to_spend(60000, 75000) == -15000
+
+
+# --- safe_to_spend_summary (shared by advisor prompt + dashboard tile) ------
+
+def test_select_checking_prefers_default_account():
+    accts = [
+        {"id": 1, "type": "checking", "name": "Main", "current_balance": 300000},
+        {"id": 2, "type": "checking", "name": "Spare", "current_balance": 50000},
+    ]
+    assert select_checking(accts, {"default_payment_account_id": 2}) == (50000, "Spare")
+
+
+def test_select_checking_sums_checking_when_no_default():
+    accts = [
+        {"id": 1, "type": "checking", "name": "Main", "current_balance": 300000},
+        {"id": 2, "type": "checking", "name": "Spare", "current_balance": 50000},
+        {"id": 3, "type": "savings", "name": "Save", "current_balance": 999999},
+    ]
+    assert select_checking(accts, {}) == (350000, "Checking")  # savings excluded
+
+
+def test_summary_no_checking_returns_none_available():
+    out = safe_to_spend_summary([], {"min_checking": 0}, [], [], date(2026, 6, 11))
+    assert out["available"] is None
+    assert out["checking_balance"] is None
+
+
+def test_summary_no_income_falls_back_to_balance_minus_reserves():
+    accts = [{"id": 1, "type": "checking", "name": "Main", "current_balance": 300000}]
+    rent = {"name": "Rent", "amount": 150000, "due_day": 1, "is_recurring": 1}
+    out = safe_to_spend_summary(accts, {}, [rent], [], date(2026, 6, 16))
+    assert out["next_payday"] is None  # no pay cadence
+    assert out["available"] == out["safe_to_spend_now"]
+    assert out["safe_to_spend_now"] == 300000 - out["reserved_total"]
+
+
+def test_summary_holds_back_split_rent_before_next_paycheck(monkeypatch):
+    # Pin the next payday so the headline figure is independent of the real clock.
+    monkeypatch.setattr(reserves, "next_payday", lambda lpd, freq: "2026-06-20")
+    accts = [{"id": 1, "type": "checking", "name": "Main", "current_balance": 300000}]
+    rent = {"name": "Rent", "amount": 150000, "due_day": 1, "is_recurring": 1}
+    income = [{"name": "Pay", "amount": 200000, "frequency": "biweekly", "last_pay_date": "2026-06-06"}]
+    # Today Jun 11: rent due Jul 1 (after the Jun 20 payday). One of two biweekly
+    # checks received -> half (75000) already set aside; rent sits in reserved_later,
+    # so only that half is held back from "safe to spend before the next paycheck".
+    out = safe_to_spend_summary(accts, {}, [rent], income, date(2026, 6, 11))
+    assert out["next_payday"]["date"] == "2026-06-20"
+    assert out["next_payday"]["bills_due_before"] == 0
+    assert out["next_payday"]["reserved_later"] == 75000
+    assert out["available"] == 300000 - 0 - 75000  # 225000 — half of rent held back

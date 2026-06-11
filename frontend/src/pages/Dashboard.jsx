@@ -3,6 +3,7 @@ import { useAccounts } from '../hooks/useAccounts'
 import { useExpenses } from '../hooks/useExpenses'
 import { useIncome } from '../hooks/useIncome'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { useSafeToSpend } from '../hooks/useSafeToSpend'
 import { useToast } from '../context/ToastContext'
 import { useAdvisorChatContext } from '../context/AdvisorChatContext'
 import { apiStream } from '../lib/api'
@@ -12,7 +13,6 @@ import {
   isDebt,
   monthlyEquiv,
   nextPaydayDate,
-  nextExpenseDueDate,
 } from '../lib/utils'
 import StatCard from '../components/ui/StatCard'
 import Card, { CardHeader, CardBody } from '../components/ui/Card'
@@ -34,14 +34,17 @@ export default function Dashboard() {
   const { expenses, loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
   const { income, loading: incomeLoading, refetch: refetchIncome } = useIncome()
   const { series: netWorthSeries, loading: netWorthLoading } = useNetWorth()
+  const { summary: safeToSpend, refetch: refetchSafeToSpend } = useSafeToSpend()
   const { showToast } = useToast()
   const { registerRefresh } = useAdvisorChatContext()
 
   // Keep the dashboard's data fresh after an advisor write, even one made from
   // the shared chat widget here.
   useEffect(
-    () => registerRefresh(() => { refetchAccounts(); refetchExpenses(); refetchIncome() }),
-    [registerRefresh, refetchAccounts, refetchExpenses, refetchIncome],
+    () => registerRefresh(() => {
+      refetchAccounts(); refetchExpenses(); refetchIncome(); refetchSafeToSpend()
+    }),
+    [registerRefresh, refetchAccounts, refetchExpenses, refetchIncome, refetchSafeToSpend],
   )
 
   const [recommendation, setRecommendation] = useState(null)
@@ -65,23 +68,6 @@ export default function Dashboard() {
       ? paydays.filter((p) => p.date === nextPay).reduce((s, p) => s + p.amount, 0)
       : 0
 
-    // Safe to spend (handoff spec, binding): sum of CHECKING-type balances only,
-    // minus recurring expenses due strictly before the next payday. Excludes
-    // savings and all investment/retirement types.
-    const checking = accounts
-      .filter((a) => a.type === 'checking')
-      .reduce((s, a) => s + resolvedBalance(a), 0)
-    const billsBeforePayday = nextPay
-      ? expenses
-          .filter((e) => e.is_recurring && e.due_day != null)
-          .filter((e) => {
-            const due = nextExpenseDueDate(e.due_day, e.last_paid_date)
-            return due && due < nextPay
-          })
-          .reduce((s, e) => s + (e.amount ?? 0), 0)
-      : 0
-    const safeToSpend = checking - billsBeforePayday
-
     // Monthly cash flow: income monthly-equiv − recurring-expense monthly-equiv.
     // Recurring expenses (due_day) are monthly, so their amount IS the monthly equiv.
     const monthlyIncome = income.reduce((s, i) => s + monthlyEquiv(i.amount ?? 0, i.frequency), 0)
@@ -90,7 +76,7 @@ export default function Dashboard() {
       .reduce((s, e) => s + (e.amount ?? 0), 0)
     const cashFlow = Math.round(monthlyIncome - monthlyExpense)
 
-    return { totalDebt, nextPay, nextPayAmount, safeToSpend, cashFlow }
+    return { totalDebt, nextPay, nextPayAmount, cashFlow }
   }, [accounts, expenses, income])
 
   // Recommendation: folded into the chat endpoint (Phase 2). The canned
@@ -159,9 +145,13 @@ export default function Dashboard() {
         />
         <StatCard
           label="Safe to spend"
-          value={formatMoney(stats.safeToSpend)}
-          valueColor={stats.safeToSpend >= 0 ? 'text-credit' : 'text-debit'}
-          subtitle={stats.nextPay ? `before ${formatDate(stats.nextPay)}` : 'checking, before payday'}
+          value={safeToSpend?.available != null ? formatMoney(safeToSpend.available) : '—'}
+          valueColor={(safeToSpend?.available ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
+          subtitle={
+            safeToSpend?.next_payday
+              ? `before ${formatDate(safeToSpend.next_payday.date)}`
+              : 'after upcoming bills'
+          }
         />
         <StatCard
           label="Total debt"

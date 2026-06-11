@@ -16,7 +16,7 @@ the function is deterministic and unit-testable.
 import calendar
 from datetime import date, timedelta
 
-from backend.lib.dates import advance_month, advance_year
+from backend.lib.dates import advance_month, advance_year, next_payday
 
 ONE_TIME_WINDOW_DAYS = 30
 
@@ -191,3 +191,91 @@ def safe_to_spend(checking_balance: int, reserved_total: int) -> int:
     negative (bills exceed cash), which is itself a useful signal.
     """
     return checking_balance - reserved_total
+
+
+def next_payday_info(income: list[dict], today: date) -> tuple | None:
+    """Soonest upcoming payday across all income sources.
+    Returns (date, amount_cents, name, frequency) or None."""
+    best = None
+    for inc in income:
+        np = next_payday(inc.get("last_pay_date"), inc.get("frequency", "monthly"))
+        if not np:
+            continue
+        d = date.fromisoformat(np)
+        if best is None or d < best[0]:
+            best = (d, inc["amount"], inc["name"], inc.get("frequency", "monthly"))
+    return best
+
+
+def select_checking(accounts: list[dict], settings: dict) -> tuple:
+    """Liquid balance + label used for safe-to-spend: the default payment account
+    if configured, else the summed balance of checking accounts. Returns
+    (balance, label) or (None, None) when there's no checking money to draw on."""
+    default_id = settings.get("default_payment_account_id")
+    checking_accts = [a for a in accounts if a["type"] == "checking"]
+    src = next((a for a in accounts if a["id"] == default_id), None) if default_id else None
+    if src:
+        return src["current_balance"], src["name"]
+    if checking_accts:
+        return sum(a["current_balance"] for a in checking_accts), "Checking"
+    return None, None
+
+
+def safe_to_spend_summary(
+    accounts: list[dict], settings: dict, expenses: list[dict],
+    income: list[dict], today: date,
+) -> dict:
+    """The full safe-to-spend picture, shared by the advisor prompt and the
+    dashboard tile so the two never drift. All amounts are INTEGER CENTS.
+
+    `available` is the headline figure the advisor states: what's safe to spend
+    BEFORE the next paycheck — bills due on/before it held in full, bills due
+    later held only at their paycheck-stepped reserve. With no usable pay cadence
+    it falls back to balance-minus-total-reserves. `checking_balance` is None when
+    there's no checking money (advisor/tile then show nothing meaningful)."""
+    checking_balance, checking_label = select_checking(accounts, settings)
+    reserves = compute_reserves(expenses, income, today)
+    reserved_total = reserves["total"]
+    floor = settings.get("min_checking") or 0
+
+    if checking_balance is None:
+        return {
+            "available": None,
+            "checking_balance": None,
+            "checking_label": None,
+            "reserved_total": reserved_total,
+            "safe_to_spend_now": None,
+            "bills": reserves["bills"],
+            "floor": floor,
+            "next_payday": None,
+        }
+
+    sts_now = safe_to_spend(checking_balance, reserved_total)
+    next_pd = next_payday_info(income, today)
+    next_payday_out = None
+    available = sts_now
+    if next_pd:
+        pd_date, pd_amount, pd_name, pd_freq = next_pd
+        pd_iso = pd_date.isoformat()
+        bills_due_before = sum(b["amount"] for b in reserves["bills"] if b["due"] <= pd_iso)
+        reserved_later = sum(b["reserved"] for b in reserves["bills"] if b["due"] > pd_iso)
+        available = checking_balance - bills_due_before - reserved_later
+        next_payday_out = {
+            "date": pd_iso,
+            "amount": pd_amount,
+            "name": pd_name,
+            "frequency": pd_freq,
+            "bills_due_before": bills_due_before,
+            "reserved_later": reserved_later,
+        }
+
+    return {
+        "available": available,
+        "checking_balance": checking_balance,
+        "checking_label": checking_label,
+        "reserved_total": reserved_total,
+        "safe_to_spend_now": sts_now,
+        "bills": reserves["bills"],
+        "floor": floor,
+        "next_payday": next_payday_out,
+    }
