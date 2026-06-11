@@ -1,23 +1,60 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch, apiStream } from '../lib/api'
 
-// Owns the advisor conversation: the Anthropic-format history sent to the
-// server (client-held), the display thread, the SSE stream, and the pending
-// confirmation lifecycle.
+// Owns the advisor conversation: the Anthropic-format history sent to the server
+// (client-held), the display thread, the SSE stream, and the pending confirmation
+// lifecycle. Mounted ONCE in AdvisorChatContext so the thread is shared across the
+// Dashboard widget and the Chat page and survives navigation.
+//
+// History is persisted to localStorage (keyed by user) at settled points only —
+// when status is 'idle', the history is balanced (no dangling tool_use), so a
+// reload never restores a half-finished proposal.
 //
 // State machine: idle → streaming → (idle | awaiting_confirmation)
 //                awaiting_confirmation → confirming → idle
-//
-// The server holds only the single-use pending_actions row; everything else
-// (history) lives here and is sent per request.
-export function useAdvisorChat({ onUpdate, onExpenseUpdate } = {}) {
-  const apiHistory = useRef([]) // Anthropic messages: user strings, assistant blocks, tool_result user blocks
-  const [thread, setThread] = useState([]) // display messages: {role, content, system?}
-  const [pending, setPending] = useState(null) // {id, preview, toolName}
+
+const STORAGE_PREFIX = 'advisorChat:'
+
+function storageKey(userId) {
+  return STORAGE_PREFIX + (userId ?? 'default')
+}
+
+function loadHistory(userId) {
+  try {
+    const raw = localStorage.getItem(storageKey(userId))
+    if (!raw) return null
+    const data = JSON.parse(raw)
+    if (!Array.isArray(data?.thread) || !Array.isArray(data?.apiHistory)) return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+export function useAdvisorChat({ onUpdate, onExpenseUpdate, userId } = {}) {
+  // Load persisted history once (user is resolved before this mounts).
+  const [initial] = useState(() => loadHistory(userId) || { thread: [], apiHistory: [] })
+  const apiHistory = useRef(initial.apiHistory)
+  const [thread, setThread] = useState(initial.thread)
+  const [pending, setPending] = useState(null)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
 
   const busy = status === 'streaming' || status === 'confirming'
+
+  // Persist only when settled: a 'pending' proposal and in-flight streams are not
+  // saved, so the stored history is always a valid (balanced) message list.
+  useEffect(() => {
+    if (status !== 'idle') return
+    try {
+      localStorage.setItem(
+        storageKey(userId),
+        JSON.stringify({ thread, apiHistory: apiHistory.current }),
+      )
+    } catch {
+      /* storage full or unavailable — non-fatal */
+    }
+  }, [thread, status, userId])
 
   function _setLastAssistant(content, streaming) {
     setThread((t) => {
@@ -126,5 +163,14 @@ export function useAdvisorChat({ onUpdate, onExpenseUpdate } = {}) {
     setStatus('idle')
   }
 
-  return { thread, pending, status, error, busy, send, confirm, cancel }
+  function clear() {
+    apiHistory.current = []
+    setThread([])
+    setPending(null)
+    setStatus('idle')
+    setError('')
+    try { localStorage.removeItem(storageKey(userId)) } catch { /* ignore */ }
+  }
+
+  return { thread, pending, status, error, busy, send, confirm, cancel, clear }
 }

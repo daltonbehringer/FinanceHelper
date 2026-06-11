@@ -784,12 +784,21 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _is_tool_result(m: dict) -> bool:
+    content = m.get("content")
+    return isinstance(content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+    )
+
+
 def _prepare_messages(messages: list[dict]) -> list[dict]:
-    """Validate roles, cap to the last MAX_HISTORY_TURNS, ensure it leads with a
-    user turn (the Anthropic API requires the first message to be from the user)."""
+    """Validate roles, cap to the last MAX_HISTORY_TURNS, and ensure it leads with
+    a real user turn. Persisted client history can be long, so the 20-turn cap may
+    slice into a tool exchange — drop leading assistant turns AND orphaned
+    tool_result user turns (a tool_result with no preceding tool_use is a 400)."""
     msgs = [m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
     msgs = msgs[-MAX_HISTORY_TURNS:]
-    while msgs and msgs[0].get("role") != "user":
+    while msgs and (msgs[0].get("role") != "user" or _is_tool_result(msgs[0])):
         msgs.pop(0)
     return msgs
 

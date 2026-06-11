@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenses } from '../hooks/useExpenses'
 import { useToast } from '../context/ToastContext'
+import { useAdvisorChatContext } from '../context/AdvisorChatContext'
 import { apiStream } from '../lib/api'
 import {
   formatMoney,
@@ -68,6 +69,14 @@ export default function Dashboard() {
   const { accounts, loading: accountsLoading, refetch: refetchAccounts } = useAccounts()
   const { expenses, loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
   const { showToast } = useToast()
+  const { registerRefresh } = useAdvisorChatContext()
+
+  // Keep the dashboard's cards fresh after an advisor write, even one made from
+  // the shared chat widget here.
+  useEffect(
+    () => registerRefresh(() => { refetchAccounts(); refetchExpenses() }),
+    [registerRefresh, refetchAccounts, refetchExpenses],
+  )
 
   const [recommendation, setRecommendation] = useState(null)
   const [recLoading, setRecLoading] = useState(false)
@@ -239,8 +248,8 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Advisor Chat — compact widget: latest response only, no thread history */}
-      <AdvisorChat variant="compact" onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
+      {/* Advisor Chat — compact widget: latest response only; full thread lives on the Chat page */}
+      <AdvisorChat variant="compact" />
 
       {/* Account sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

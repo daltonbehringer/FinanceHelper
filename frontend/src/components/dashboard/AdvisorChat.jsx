@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useAdvisorChat } from '../../hooks/useAdvisorChat'
+import { useAdvisorChatContext } from '../../context/AdvisorChatContext'
 import { formatMoney } from '../../lib/utils'
 import Card, { CardHeader, CardBody } from '../ui/Card'
 import Button from '../ui/Button'
 import Markdown from '../ui/Markdown'
-
-const RECOMMEND_PROMPT = 'What should I prioritize this month?'
 
 function Row({ label, value }) {
   return (
@@ -74,20 +72,21 @@ function PreviewCard({ preview, busy, onConfirm, onCancel }) {
   )
 }
 
-export default function AdvisorChat({ onUpdate, onExpenseUpdate, variant = 'full' }) {
-  const { thread, pending, status, error, busy, send, confirm, cancel } =
-    useAdvisorChat({ onUpdate, onExpenseUpdate })
+export default function AdvisorChat({ variant = 'full' }) {
+  const { thread, pending, status, error, busy, send, confirm, cancel, clear } =
+    useAdvisorChatContext()
 
   const [text, setText] = useState('')
   const textareaRef = useRef(null)
   const threadEndRef = useRef(null)
 
-  // 'compact' (Dashboard widget): show only the most recent assistant response
-  // and any confirmation card — no running thread, no echoed prompts.
-  // 'full' (Chat page): the whole conversation, scrollable, with quick actions.
+  // 'compact' (Dashboard widget): a fresh quick-action box — show only the latest
+  // assistant response to what's asked HERE this visit, no echoed prompts, no
+  // history (that lives on the Chat page). 'full' (Chat page): the whole thread.
   const compact = variant === 'compact'
+  const [sessionStart] = useState(() => thread.length)
   const displayed = compact
-    ? thread.filter((m) => m.role === 'assistant').slice(-1)
+    ? thread.slice(sessionStart).filter((m) => m.role === 'assistant').slice(-1)
     : thread
 
   useEffect(() => {
@@ -116,10 +115,21 @@ export default function AdvisorChat({ onUpdate, onExpenseUpdate, variant = 'full
     }
   }
 
+  function handleClear() {
+    if (window.confirm('Clear the entire chat history?')) clear()
+  }
+
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-base font-semibold text-gray-900">Financial Advisor</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Financial Advisor</h2>
+          {!compact && thread.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={handleClear} disabled={busy}>
+              Clear
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardBody className="space-y-4">
         {(displayed.length > 0 || pending) && (
@@ -163,12 +173,7 @@ export default function AdvisorChat({ onUpdate, onExpenseUpdate, variant = 'full
             disabled={busy}
             className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-50"
           />
-          <div className={`flex gap-2 ${compact ? 'justify-end' : 'justify-between'}`}>
-            {!compact && (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => send(RECOMMEND_PROMPT)}>
-                Get recommendation
-              </Button>
-            )}
+          <div className="flex justify-end">
             <Button onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>
               Send
             </Button>

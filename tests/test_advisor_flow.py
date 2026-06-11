@@ -8,7 +8,7 @@ call. The LLM's tool ROUTING is covered separately by the llm_eval suite.
 from datetime import date, datetime, timedelta, timezone
 
 from backend.db import fetchall, fetchone
-from backend.routers.ai import _resolve
+from backend.routers.ai import _prepare_messages, _resolve
 from backend.services.pending_actions import create_pending_action
 from backend.services.snapshots import _current_balance
 from tests.factories import (
@@ -16,6 +16,29 @@ from tests.factories import (
     make_expense,
     make_settings,
 )
+
+
+def test_prepare_messages_caps_to_twenty_turns():
+    msgs = [{"role": "user", "content": str(i)} for i in range(30)]
+    assert len(_prepare_messages(msgs)) == 20
+
+
+def test_prepare_messages_drops_leading_assistant():
+    msgs = [{"role": "assistant", "content": "hi"}, {"role": "user", "content": "hey"}]
+    out = _prepare_messages(msgs)
+    assert out[0]["role"] == "user" and out[0]["content"] == "hey"
+
+
+def test_prepare_messages_drops_leading_orphaned_tool_result():
+    # A persisted/trimmed history can start with a tool_result whose tool_use was
+    # trimmed away — that's a 400 to the API, so it must be dropped.
+    msgs = [
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "done"}]},
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "next"},
+    ]
+    out = _prepare_messages(msgs)
+    assert out[0]["content"] == "next"
 
 
 def _propose(user_id, tool_name, tool_input):

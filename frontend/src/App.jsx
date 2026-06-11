@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
+import { AdvisorChatProvider } from './context/AdvisorChatContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -19,18 +20,20 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/accounts" element={<Accounts />} />
-              <Route path="/expenses" element={<Expenses />} />
-              <Route path="/income" element={<Income />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/advisor" element={<Navigate to="/chat" replace />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </Layout>
+          <AdvisorChatProvider>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/accounts" element={<Accounts />} />
+                <Route path="/expenses" element={<Expenses />} />
+                <Route path="/income" element={<Income />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/advisor" element={<Navigate to="/chat" replace />} />
+                <Route path="/history" element={<History />} />
+                <Route path="/settings" element={<Settings />} />
+              </Routes>
+            </Layout>
+          </AdvisorChatProvider>
         </ToastProvider>
       </AuthProvider>
       <Analytics />
