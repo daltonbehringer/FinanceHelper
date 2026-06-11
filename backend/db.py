@@ -310,6 +310,18 @@ def _migrate_settings_default_payment(conn: sqlite3.Connection):
     conn.execute("UPDATE user_settings SET default_payment_account_id = NULL, payment_account_configured = 1 WHERE default_payment_account_id IS NOT NULL AND default_payment_account_id < 0")
 
 
+def _migrate_settings_advice_posture(conn: sqlite3.Connection):
+    """Add the advice_posture column to user_settings (Phase 2.1)."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='user_settings'"
+    ).fetchone()
+    if not row:
+        return  # Table doesn't exist yet, will be created below
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
+    if "advice_posture" not in cols:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN advice_posture TEXT NOT NULL DEFAULT 'default'")
+
+
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -329,6 +341,7 @@ def init_db():
         _migrate_income_last_pay_date(conn)
         _migrate_expenses_last_paid_date(conn)
         _migrate_settings_default_payment(conn)
+        _migrate_settings_advice_posture(conn)
         _migrate_money_to_cents(conn)
         _migrate_snapshot_timestamps(conn)
 
@@ -386,6 +399,7 @@ def init_db():
             min_checking                INTEGER NOT NULL DEFAULT 0,
             default_payment_account_id  INTEGER REFERENCES accounts(id),
             payment_account_configured  INTEGER NOT NULL DEFAULT 0,
+            advice_posture              TEXT NOT NULL DEFAULT 'default',
             updated_at                  TEXT NOT NULL
         );
 

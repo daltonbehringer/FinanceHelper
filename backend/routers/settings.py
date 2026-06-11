@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 class SettingsUpdate(BaseModel):
     min_checking: Optional[StrictInt] = None  # integer cents; floats are rejected
     default_payment_account_id: Optional[int] = None
+    advice_posture: Optional[str] = None
 
 
 @router.get("")
@@ -48,6 +49,7 @@ async def update_settings(body: SettingsUpdate, user_id: int = Depends(get_curre
         user_id,
         min_checking=body.min_checking,
         default_payment_account_id=body.default_payment_account_id,
+        advice_posture=body.advice_posture,
         ctx=EventContext(source="user"),
     )
     # Return the updated settings (reuse GET logic for auto-detect)

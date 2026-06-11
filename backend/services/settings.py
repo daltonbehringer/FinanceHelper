@@ -1,8 +1,15 @@
 """User-settings writes (upsert)."""
 
+from fastapi import HTTPException
+
 from backend.db import get_db
 from backend.lib.dates import utc_now_iso
 from backend.services._core import EventContext, diff_changes, log_event, with_correlation
+
+# Advice postures the LLM advisor can adopt. "default" = the model chooses.
+VALID_POSTURES = {
+    "default", "aggressive_payoff", "balanced", "conservative", "wealth_building",
+}
 
 
 def update_settings(
@@ -10,10 +17,14 @@ def update_settings(
     *,
     min_checking: int | None = None,
     default_payment_account_id: int | None = None,
+    advice_posture: str | None = None,
     ctx: EventContext,
 ) -> dict:
     """Upsert user settings. `default_payment_account_id=0` means "explicitly
     no default" — stored as NULL but marked configured (existing contract)."""
+    if advice_posture is not None and advice_posture not in VALID_POSTURES:
+        raise HTTPException(status_code=422, detail=f"Invalid advice_posture: {advice_posture}")
+
     ctx = with_correlation(ctx)
     now = utc_now_iso()
     conn = get_db()
@@ -32,6 +43,8 @@ def update_settings(
                         default_payment_account_id if default_payment_account_id > 0 else None
                     )
                     updates["payment_account_configured"] = 1
+                if advice_posture is not None:
+                    updates["advice_posture"] = advice_posture
                 if updates:
                     set_clause = ", ".join(f"{k} = ?" for k in updates)
                     conn.execute(
@@ -56,10 +69,11 @@ def update_settings(
                 cur = conn.execute(
                     """
                     INSERT INTO user_settings (user_id, min_checking, default_payment_account_id,
-                                               payment_account_configured, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
+                                               payment_account_configured, advice_posture, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (user_id, min_checking or 0, default_id, configured, now),
+                    (user_id, min_checking or 0, default_id, configured,
+                     advice_posture or "default", now),
                 )
                 row = conn.execute(
                     "SELECT * FROM user_settings WHERE id = ?", (cur.lastrowid,)

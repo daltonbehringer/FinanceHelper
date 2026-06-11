@@ -15,6 +15,7 @@ export default function Settings() {
   const { showToast } = useToast()
   const [minChecking, setMinChecking] = useState('')
   const [defaultPaymentAccountId, setDefaultPaymentAccountId] = useState('')
+  const [advicePosture, setAdvicePosture] = useState('default')
   const [saving, setSaving] = useState(false)
 
   const checkingAccounts = accounts.filter(a => a.type === 'checking')
@@ -25,8 +26,9 @@ export default function Settings() {
       setDefaultPaymentAccountId(
         settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
       )
+      setAdvicePosture(settings.advice_posture || 'default')
     }
-  }, [loading, settings.min_checking, settings.default_payment_account_id])
+  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture])
 
   async function handleSave(e) {
     e.preventDefault()
@@ -40,7 +42,11 @@ export default function Settings() {
     try {
       const resp = await apiFetch('/api/settings', {
         method: 'PUT',
-        body: JSON.stringify({ min_checking: value, default_payment_account_id: paymentId }),
+        body: JSON.stringify({
+          min_checking: value,
+          default_payment_account_id: paymentId,
+          advice_posture: advicePosture,
+        }),
       })
       if (resp && resp.ok) {
         showToast('Settings saved', 'success')
@@ -73,6 +79,30 @@ export default function Settings() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        <Card>
+          <CardHeader>
+            <h2 className="text-base font-semibold text-gray-900">Advice Posture</h2>
+          </CardHeader>
+          <CardBody>
+            <p className="text-sm text-gray-600 mb-4">
+              Tune how the advisor weighs paying down debt versus keeping a cushion and
+              investing. <span className="font-medium">Default</span> lets the advisor pick the
+              posture that best fits your situation.
+            </p>
+            <select
+              value={advicePosture}
+              onChange={(e) => setAdvicePosture(e.target.value)}
+              className="w-full sm:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+            >
+              <option value="default">Default (let the advisor decide)</option>
+              <option value="aggressive_payoff">Aggressive payoff</option>
+              <option value="balanced">Balanced</option>
+              <option value="conservative">Conservative</option>
+              <option value="wealth_building">Wealth-building</option>
+            </select>
+          </CardBody>
+        </Card>
+
         <Card>
           <CardHeader>
             <h2 className="text-base font-semibold text-gray-900">Default Payment Account</h2>
