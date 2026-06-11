@@ -4,7 +4,7 @@ export default function Header({ onMenuToggle }) {
   const { user, logout } = useAuth()
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+    <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
       <div className="flex items-center gap-3 md:hidden">
         <button
           onClick={onMenuToggle}

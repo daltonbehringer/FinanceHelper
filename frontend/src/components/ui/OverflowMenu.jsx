@@ -61,7 +61,7 @@ export default function OverflowMenu({ items }) {
       {open && (
         <div
           ref={menuRef}
-          className="fixed z-50 w-36 rounded-lg bg-white shadow-lg ring-1 ring-black/5 py-1"
+          className="fixed z-50 w-36 rounded-lg bg-surface-raised border border-border shadow-lg py-1"
           style={{
             top: pos.direction === 'up' ? undefined : pos.top,
             bottom: pos.direction === 'up' ? window.innerHeight - pos.top + 4 : undefined,
@@ -74,8 +74,8 @@ export default function OverflowMenu({ items }) {
               onClick={() => { setOpen(false); item.onClick() }}
               className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                 item.danger
-                  ? 'text-red-600 hover:bg-red-50'
-                  : 'text-gray-700 hover:bg-gray-50'
+                  ? 'text-danger hover:bg-debit-soft'
+                  : 'text-text hover:bg-surface-sunken'
               }`}
             >
               {item.label}

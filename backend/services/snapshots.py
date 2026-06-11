@@ -225,6 +225,7 @@ def delete_snapshot(user_id: int, snapshot_id: int, ctx: EventContext) -> dict:
                 raise HTTPException(status_code=404, detail="Snapshot not found")
 
             account_id = target["account_id"]
+            balance_before = _current_balance(conn, account_id)
             conn.execute(
                 "DELETE FROM account_snapshots WHERE id = ? AND user_id = ?",
                 (snapshot_id, user_id),
@@ -243,6 +244,7 @@ def delete_snapshot(user_id: int, snapshot_id: int, ctx: EventContext) -> dict:
             log_event(
                 conn, user_id=user_id, entity_type="snapshot", entity_id=snapshot_id,
                 action="delete", ctx=ctx, changes=dict(target),
+                amount_delta=new_balance - balance_before,
             )
     finally:
         conn.close()

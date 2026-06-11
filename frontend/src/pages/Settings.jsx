@@ -92,7 +92,7 @@ export default function Settings() {
             <select
               value={advicePosture}
               onChange={(e) => setAdvicePosture(e.target.value)}
-              className="w-full sm:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              className="w-full sm:max-w-xs rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none"
             >
               <option value="default">Default (let the advisor decide)</option>
               <option value="aggressive_payoff">Aggressive payoff</option>
@@ -126,7 +126,7 @@ export default function Settings() {
               <select
                 value={defaultPaymentAccountId}
                 onChange={(e) => setDefaultPaymentAccountId(e.target.value)}
-                className="w-full sm:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                className="w-full sm:max-w-xs rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none"
               >
                 <option value="">None (ask every time)</option>
                 {checkingAccounts.map((a) => (

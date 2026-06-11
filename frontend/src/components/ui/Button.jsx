@@ -2,8 +2,8 @@ const variants = {
   primary: 'bg-accent hover:bg-accent-hover text-white',
   success: 'bg-success hover:bg-success-hover text-white',
   danger: 'bg-danger hover:bg-danger-hover text-white',
-  outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50',
-  ghost: 'text-gray-600 hover:bg-gray-100',
+  outline: 'border border-border text-text hover:bg-surface-raised',
+  ghost: 'text-text-muted hover:bg-surface-raised hover:text-text',
 }
 
 const sizes = {

@@ -21,6 +21,40 @@ export function centsToDollarInput(cents) {
   return String(cents / 100)
 }
 
+// Compact money for chart axes: 12345600 cents -> "$123k", 4500 -> "$45".
+export function compactMoney(cents) {
+  if (cents == null) return ''
+  const d = cents / 100
+  const abs = Math.abs(d)
+  const sign = d < 0 ? '-' : ''
+  if (abs >= 1000) return sign + '$' + (abs / 1000).toFixed(abs >= 10000 ? 0 : 1) + 'k'
+  return sign + '$' + abs.toFixed(0)
+}
+
+// Subtract whole months from an ISO date (YYYY-MM-DD), returning the same shape.
+export function subtractMonths(dateStr, months) {
+  const [y, m, day] = dateStr.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1, day))
+  d.setUTCMonth(d.getUTCMonth() - months)
+  return d.toISOString().slice(0, 10)
+}
+
+// Relative timestamp for the activity feed; absolute form goes in a title tooltip.
+export function timeAgo(iso) {
+  if (!iso) return ''
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 60) return 'just now'
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 30) return `${days}d ago`
+  const mos = Math.floor(days / 30)
+  if (mos < 12) return `${mos}mo ago`
+  return `${Math.floor(mos / 12)}y ago`
+}
+
 export function formatRate(rate) {
   if (rate == null || rate === 0) return '\u2014'
   return rate.toFixed(2) + '%'

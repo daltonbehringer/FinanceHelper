@@ -126,6 +126,8 @@ def test_snapshot_delete_event(client, user_a):
     (ev,) = [e for e in _events(user_a, "snapshot") if e["action"] == "delete"]
     assert ev["entity_id"] == s2
     assert ev["changes"]["balance"] == 700  # full object snapshot
+    # Phase 3a: delete events carry the balance-revert delta (700 -> 1000).
+    assert ev["amount_delta"] == 300
 
 
 def test_snapshot_endpoint_ignores_client_supplied_source(client, user_a):

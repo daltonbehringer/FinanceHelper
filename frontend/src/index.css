@@ -1,37 +1,113 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   Phase 3a design tokens — dark is the only theme.
+
+   Two layers live here:
+   1. Named semantic tokens (surface/border/text/credit/debit/chart-*) used by
+      the migrated ui/ primitives and the rewritten History page.
+   2. An INVERTED neutral ramp (gray-50…900 reversed, white kept as white) so the
+      untouched pages — which still use raw `text-gray-700`, `bg-gray-50`, etc. —
+      render dark-correct without being rewritten. `white` is left untouched so
+      `text-white` button/sidebar labels stay light on their colored fills; the
+      handful of `bg-white` surfaces were migrated to `bg-surface` by hand.
+   ============================================================================ */
+
 @theme {
-  --color-navy: #1a2332;
-  --color-navy-light: #243447;
-  --color-navy-lighter: #2d4052;
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-success: #10b981;
-  --color-success-hover: #059669;
-  --color-danger: #ef4444;
-  --color-danger-hover: #dc2626;
-  --color-warning: #f59e0b;
-  --color-warning-bg: #fef3c7;
+  /* Surfaces (dark, layered: sunken < base < raised) */
+  --color-surface: #161b22;          /* cards, panels, header */
+  --color-surface-raised: #1d242e;   /* hovers, popovers, elevated chips */
+  --color-surface-sunken: #0d1117;   /* app background, inputs */
+  --color-border: #283039;
+  --color-border-strong: #3a444f;
+
+  /* Chrome (sidebar family — darkest) */
+  --color-navy: #0a0e14;
+  --color-navy-light: #161b22;
+  --color-navy-lighter: #1d242e;
+
+  /* Text */
+  --color-text: #e6edf3;
+  --color-text-muted: #9aa7b4;
+  --color-text-subtle: #6e7b8a;
+
+  /* Brand + interactive */
+  --color-accent: #4f8cff;
+  --color-accent-hover: #6ea0ff;
+  --color-accent-soft: #1b2741;
+
+  /* Money semantics — ONE green (in), ONE red (out), used everywhere */
+  --color-credit: #3fb950;
+  --color-credit-soft: #11241a;
+  --color-debit: #f85149;
+  --color-debit-soft: #2a1316;
+
+  /* Status (kept names used across the app) */
+  --color-success: #3fb950;
+  --color-success-hover: #2ea043;
+  --color-danger: #f85149;
+  --color-danger-hover: #e5484d;
+  --color-warning: #d29922;
+  --color-warning-bg: #2a2410;
+
+  /* Chart palette — mirrored exactly in the registered ECharts theme */
+  --color-chart-net: #4f8cff;
+  --color-chart-assets: #3fb950;
+  --color-chart-debts: #f85149;
+  --color-chart-accent2: #a371f7;
+  --color-chart-grid: #1f2630;
+  --color-chart-axis: #6e7b8a;
+
+  /* Inverted neutral ramp (legacy bleed; white intentionally NOT inverted) */
+  --color-gray-50: #0d1117;
+  --color-gray-100: #161b22;
+  --color-gray-200: #283039;
+  --color-gray-300: #3a444f;
+  --color-gray-400: #56616e;
+  --color-gray-500: #768290;
+  --color-gray-600: #9aa7b4;
+  --color-gray-700: #c2cbd6;
+  --color-gray-800: #dde3ea;
+  --color-gray-900: #eef2f6;
+
+  /* Type scale + radii */
+  --text-2xs: 0.6875rem;
+  --radius-xl: 0.875rem;
 }
 
 @layer base {
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    @apply bg-gray-50 text-gray-900 antialiased;
+    background-color: var(--color-surface-sunken);
+    color: var(--color-text);
+    @apply antialiased;
+  }
+
+  /* Tabular, lining numerals everywhere money or dates are shown */
+  .tnum,
+  table {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
   }
 }
 
+/* Money color helpers — single source of truth for debit/credit */
+.text-credit { color: var(--color-credit); }
+.text-debit { color: var(--color-debit); }
+
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  background-color: var(--color-border-strong);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background-color: var(--color-text-subtle);
 }
 
 @keyframes slideIn {
@@ -49,26 +125,34 @@
   animation: slideOut 0.3s ease-in forwards;
 }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadeInUp 0.18s ease-out forwards;
+}
+
 /* AI Budget card glow */
 @keyframes aiGlow {
   0%, 100% {
     box-shadow:
-      0 0 8px rgba(59, 130, 246, 0.3),
-      0 0 20px rgba(59, 130, 246, 0.15),
-      0 0 40px rgba(139, 92, 246, 0.1);
+      0 0 8px rgba(79, 140, 255, 0.3),
+      0 0 20px rgba(79, 140, 255, 0.15),
+      0 0 40px rgba(163, 113, 247, 0.1);
   }
   50% {
     box-shadow:
-      0 0 12px rgba(59, 130, 246, 0.5),
-      0 0 30px rgba(59, 130, 246, 0.25),
-      0 0 60px rgba(139, 92, 246, 0.2);
+      0 0 12px rgba(79, 140, 255, 0.5),
+      0 0 30px rgba(79, 140, 255, 0.25),
+      0 0 60px rgba(163, 113, 247, 0.2);
   }
 }
 .ai-glow {
   animation: aiGlow 3s ease-in-out infinite;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(79, 140, 255, 0.3);
 }
 .ai-glow:hover {
   animation: aiGlow 1.5s ease-in-out infinite;
-  border-color: rgba(59, 130, 246, 0.5);
+  border-color: rgba(79, 140, 255, 0.5);
 }

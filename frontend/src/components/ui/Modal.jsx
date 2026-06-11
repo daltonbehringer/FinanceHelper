@@ -14,9 +14,9 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative bg-white rounded-xl shadow-xl ${maxWidth} w-full max-h-[90vh] overflow-auto animate-in`}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative bg-surface border border-border rounded-xl shadow-xl ${maxWidth} w-full max-h-[90vh] overflow-auto animate-in`}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           <button
             onClick={onClose}

@@ -10,7 +10,7 @@ export default function StatCard({ label, value, valueColor = 'text-gray-900', i
           {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
         </div>
         {icon && (
-          <div className="p-1.5 sm:p-2 bg-gray-50 rounded-lg text-gray-400 flex-shrink-0">
+          <div className="p-1.5 sm:p-2 bg-surface-raised rounded-lg text-text-subtle flex-shrink-0">
             {icon}
           </div>
         )}

@@ -18,7 +18,9 @@ from backend.db import init_db
 from backend.rate_limit import limiter
 from backend.routers.accounts import router as accounts_router
 from backend.routers.ai import router as ai_router
+from backend.routers.events import router as events_router
 from backend.routers.expenses import router as expenses_router
+from backend.routers.history import router as history_router
 from backend.routers.income import router as income_router
 from backend.routers.meta import router as meta_router
 from backend.routers.settings import router as settings_router
@@ -66,6 +68,8 @@ app.include_router(expenses_router)
 app.include_router(income_router)
 app.include_router(meta_router)
 app.include_router(settings_router)
+app.include_router(events_router)
+app.include_router(history_router)
 
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
