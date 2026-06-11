@@ -86,9 +86,12 @@ def compute_reserves(expenses: list[dict], today: date) -> dict:
     return {"total": total, "bills": bills}
 
 
-def safe_to_spend(checking_balance: int, min_checking: int, reserved_total: int) -> int:
-    """Liquid balance minus the floor minus what's reserved for bills.
+def safe_to_spend(checking_balance: int, reserved_total: int) -> int:
+    """What's actually available for everyday/variable spending: the liquid
+    balance minus what's set aside for upcoming bills.
 
-    Can go negative — that itself is a useful signal (bills + floor exceed cash).
+    The user's "spending money" target is a SEPARATE floor on this number, not a
+    second subtraction — anything above it is surplus for debt/savings. Can go
+    negative (bills exceed cash), which is itself a useful signal.
     """
-    return checking_balance - (min_checking or 0) - reserved_total
+    return checking_balance - reserved_total

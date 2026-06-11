@@ -95,15 +95,15 @@ def test_resolve_explicit_source_overrides_default(user_a):
     assert preview["source"]["account_id"] == savings
 
 
-def test_resolve_warns_when_payment_breaches_checking_floor(user_a):
+def test_resolve_warns_when_payment_breaches_spending_money(user_a):
     checking = make_account(user_a, name="Checking", type="checking", balance=60000)
     card = make_account(user_a, name="Visa", type="credit_card", balance=100000)
     make_settings(user_a, min_checking=50000, default_payment_account_id=checking,
                   payment_account_configured=1)
     preview, _, _ = _resolve(user_a, "record_balance_update",
-                             {"account_id": card, "payment_made": 200})  # leaves $400 < $500 floor
+                             {"account_id": card, "payment_made": 200})  # leaves $400 < $500 spending money
     assert preview["warnings"]
-    assert "floor" in preview["warnings"][0].lower()
+    assert "spending money" in preview["warnings"][0].lower()
 
 
 def test_resolve_ambiguous_account_returns_error_no_proposal(user_a):

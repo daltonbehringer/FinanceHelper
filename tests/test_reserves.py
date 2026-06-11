@@ -68,9 +68,11 @@ def test_bill_without_date_is_skipped():
     assert out["bills"] == []
 
 
-def test_safe_to_spend_subtracts_floor_and_reserves():
-    assert safe_to_spend(300000, 50000, 75000) == 175000
+def test_safe_to_spend_is_balance_minus_reserves():
+    # Spending money is NOT subtracted here — it's a floor on this number.
+    assert safe_to_spend(300000, 75000) == 225000
 
 
 def test_safe_to_spend_can_go_negative():
-    assert safe_to_spend(60000, 50000, 75000) == -65000
+    # Bills reserved exceed the balance -> negative (can't even cover bills).
+    assert safe_to_spend(60000, 75000) == -15000

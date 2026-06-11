@@ -139,21 +139,21 @@ export default function Settings() {
 
         <Card>
           <CardHeader>
-            <h2 className="text-base font-semibold text-gray-900">Checking Account Floor</h2>
+            <h2 className="text-base font-semibold text-gray-900">Monthly Spending Money</h2>
           </CardHeader>
           <CardBody>
             <p className="text-sm text-gray-600 mb-4">
-              Set the minimum balance you want to keep in your checking account at all times.
-              The AI advisor will treat this as a floor and never recommend payments that would
-              drop your checking balance below this amount. This reserve covers essentials like
-              groceries, gas, and unexpected expenses.
+              How much you keep available each month for everyday variable expenses — groceries,
+              gas, transportation, and the like. The advisor reserves this for you: it won't
+              recommend debt or savings that dip into it, and it plans so your "safe to spend"
+              (balance minus upcoming bills) stays at or above this amount.
             </p>
             <Input
-              label="Minimum Checking Balance"
+              label="Monthly spending money"
               type="number"
               min="0"
               step="0.01"
-              placeholder="e.g. 1500"
+              placeholder="e.g. 1200"
               value={minChecking}
               onChange={(e) => setMinChecking(e.target.value)}
               className="flex-1 sm:max-w-xs"

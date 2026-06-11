@@ -59,17 +59,17 @@ MAX_HISTORY_TURNS = 20  # client-held history is capped server-side (Phase 2 def
 PENDING_ACTION_TTL_MINUTES = 10
 
 # User-tunable advice posture (Settings → advice_posture). The matching block is
-# injected into the system prompt. The checking floor is a hard limit in EVERY
+# injected into the system prompt. The spending money is a hard limit in EVERY
 # posture — these only shift how the surplus is allocated.
 POSTURE_GUIDANCE = {
     "default": "ADVICE POSTURE — Default: adopt whichever posture below best fits the "
                "user's actual situation, and say which in a few words when it matters.",
     "aggressive_payoff": "ADVICE POSTURE — Aggressive payoff: direct the surplus at debt by "
-               "the avalanche method (highest rate first). Keep only the checking floor as a "
-               "buffer; minimize discretionary slack. Never breach the floor.",
+               "the avalanche method (highest rate first). Keep only the spending money as a "
+               "buffer; minimize discretionary slack. Never breach it.",
     "balanced": "ADVICE POSTURE — Balanced: pay down debt steadily while keeping roughly 20% "
-               "of monthly income (or the checking floor, whichever is larger) as an "
-               "essentials buffer before extra debt payments.",
+               "of monthly income (or the spending money, whichever is larger) as a buffer "
+               "before extra debt payments.",
     "conservative": "ADVICE POSTURE — Conservative: build an emergency cushion and keep a "
                "larger buffer first; pay debt at a steady, sustainable pace rather than "
                "aggressively. Favor safety over speed.",
@@ -228,10 +228,11 @@ def _build_financial_context(user_id: int) -> tuple[list[dict], str]:
 
     if min_checking > 0:
         parts.append(
-            f"CHECKING ACCOUNT FLOOR: {_fmt_cents(min_checking)}\n"
-            f"This is a hard floor — NEVER recommend any payment or action that would cause "
-            f"the user's checking balance to drop below this amount. When calculating how much "
-            f"the user can afford toward debt, subtract this floor from the checking balance first."
+            f"SPENDING MONEY: {_fmt_cents(min_checking)}\n"
+            f"This is the user's everyday/variable-spending budget (groceries, gas, transport, "
+            f"etc.). It is a hard floor: never recommend a payment or action that pushes their "
+            f"safe-to-spend below it. Direct extra debt or savings only from the surplus above "
+            f"this amount."
         )
 
     if income:
@@ -303,7 +304,7 @@ def _budget_breakdown(user_id: int) -> str:
     disposable = monthly_income - monthly_expenses - min_payments
     reserve = min_checking if min_checking > 0 else monthly_income * 0.2
     reserve_label = (
-        f"Checking account floor (user-configured): ${reserve:,.2f}"
+        f"Spending money (user-configured): ${reserve:,.2f}"
         if min_checking > 0
         else f"20% essential reserve (groceries, gas, medical, etc.): ${reserve:,.2f}"
     )
@@ -346,17 +347,23 @@ def _safe_to_spend_block(user_id: int) -> str:
     else:
         return ""
 
-    sts = safe_to_spend(checking_balance, floor, reserved_total)
+    sts = safe_to_spend(checking_balance, reserved_total)
     lines = [
-        "SAFE TO SPEND (judge what the user can afford against THIS, not the raw balance):",
+        "SAFE TO SPEND — money available for everyday/variable spending "
+        "(judge affordability against THIS, not the raw balance):",
         f"  {label} balance: {_fmt_cents(checking_balance)}",
     ]
-    if floor:
-        lines.append(f"  Checking floor (untouchable): {_fmt_cents(floor)}")
     if reserved_total:
         detail = ", ".join(f"{b['name']} {_fmt_cents(b['reserved'])}" for b in reserves["bills"])
         lines.append(f"  Reserved for upcoming bills: {_fmt_cents(reserved_total)} ({detail})")
     lines.append(f"  => Safe to spend: {_fmt_cents(sts)}")
+    if floor:
+        lines.append(f"  Spending money (target for groceries, gas, variable costs): {_fmt_cents(floor)}")
+        lines.append(
+            f"  => Surplus for debt/savings (safe-to-spend minus spending money): {_fmt_cents(sts - floor)}"
+        )
+        lines.append("Recommend extra debt or savings ONLY from that surplus; never push "
+                     "safe-to-spend below the spending money.")
     return "\n".join(lines)
 
 
@@ -416,7 +423,8 @@ ANSWERING:
 - Be specific: reference actual account names, balances, rates, and dates from the data.
 - For totals (net worth, debt, assets), use the PRE-COMPUTED TOTALS — do not re-add.
 - Judge what the user can afford against SAFE TO SPEND below, never the raw checking \
-balance. The checking floor is a hard limit — never recommend an action that breaches it.
+balance. Recommend extra debt or savings only from the surplus above the user's spending \
+money; never push safe-to-spend below the spending money.
 - Prefer the debt avalanche method (highest rate first) unless the situation argues \
 otherwise. Always give concrete dollar amounts and timing; never vague advice.
 - Don't put a whole large bill on one paycheck if it can be spread — fund big bills across \
@@ -439,7 +447,8 @@ scan at a glance — exactly these three columns:
 
 Every row is a concrete action with a specific dollar amount and a timing, ordered by \
 priority. Include the bills and minimum payments that must be covered before any extra \
-debt payment. Keep total recommended outflow within income and above the checking floor. \
+debt payment. Keep total recommended outflow within income and the user's safe-to-spend \
+above their spending money. \
 After the table, at most two short lines of caveats or next steps. No other sections.
 
 {financial_context}
@@ -525,11 +534,11 @@ TOOLS = [
 # Server-side resolution (proposal time) — all math in cents
 # ---------------------------------------------------------------------------
 
-def _floor_warning(source: dict, source_new: int, settings: dict) -> str | None:
+def _spending_money_warning(source: dict, source_new: int, settings: dict) -> str | None:
     floor = settings.get("min_checking") or 0
     if floor and source["type"] == "checking" and source_new < floor:
         return (f"This would drop {source['name']} to {_fmt_cents(source_new)}, "
-                f"below your {_fmt_cents(floor)} checking floor.")
+                f"below your {_fmt_cents(floor)} spending money.")
     return None
 
 
@@ -574,7 +583,7 @@ def _resolve_balance_update(accounts, settings, tool_input):
                     "account_id": source_id, "account_name": source["name"],
                     "current_balance": source_cur, "new_balance": source_new,
                 }
-                w = _floor_warning(source, source_new, settings)
+                w = _spending_money_warning(source, source_new, settings)
                 if w:
                     warnings.append(w)
             else:
@@ -631,7 +640,7 @@ def _resolve_pay_expense(accounts, expenses, settings, tool_input):
                 "account_id": source_id, "account_name": source["name"],
                 "current_balance": source_cur, "new_balance": source_new,
             }
-            w = _floor_warning(source, source_new, settings)
+            w = _spending_money_warning(source, source_new, settings)
             if w:
                 warnings.append(w)
         else:
