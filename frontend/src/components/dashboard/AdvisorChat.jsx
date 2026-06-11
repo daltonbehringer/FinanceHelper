@@ -8,8 +8,8 @@ import Markdown from '../ui/Markdown'
 function Row({ label, value }) {
   return (
     <>
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-900">{value}</span>
+      <span className="text-text-muted">{label}</span>
+      <span className="font-medium text-text">{value}</span>
     </>
   )
 }
@@ -18,8 +18,8 @@ function Row({ label, value }) {
 function PreviewCard({ preview, busy, onConfirm, onCancel }) {
   const isExpense = preview.tool === 'pay_expense'
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 space-y-3">
-      <h3 className="text-sm font-semibold text-amber-900">
+    <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-4 space-y-3">
+      <h3 className="text-sm font-semibold text-text">
         {isExpense ? 'Confirm expense payment' : 'Confirm balance update'}
       </h3>
 
@@ -47,15 +47,15 @@ function PreviewCard({ preview, busy, onConfirm, onCancel }) {
       </div>
 
       {preview.source && (
-        <div className="mt-2 pt-3 border-t border-amber-200 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <span className="col-span-2 text-xs font-semibold text-amber-800">Paid from</span>
+        <div className="mt-2 pt-3 border-t border-warning/30 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <span className="col-span-2 text-xs font-semibold text-text-muted">Paid from</span>
           <Row label="Account" value={preview.source.account_name} />
           <Row label="New balance" value={formatMoney(preview.source.new_balance)} />
         </div>
       )}
 
       {preview.warnings?.length > 0 && (
-        <div className="rounded-md bg-amber-100 border border-amber-300 px-3 py-2 text-xs text-amber-900 space-y-1">
+        <div className="rounded-md bg-warning/15 border border-warning/40 px-3 py-2 text-xs text-warning space-y-1">
           {preview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
         </div>
       )}
@@ -123,7 +123,7 @@ export default function AdvisorChat({ variant = 'full' }) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Financial Advisor</h2>
+          <h2 className="text-base font-semibold text-text">Financial Advisor</h2>
           {!compact && thread.length > 0 && (
             <Button variant="ghost" size="sm" onClick={handleClear} disabled={busy}>
               Clear
@@ -137,13 +137,13 @@ export default function AdvisorChat({ variant = 'full' }) {
             {displayed.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
                 {m.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-4 py-2 text-sm text-white whitespace-pre-wrap">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-2 text-sm text-white whitespace-pre-wrap">
                     {m.content}
                   </div>
                 ) : (
-                  <div className={`rounded-2xl rounded-bl-sm px-4 py-3 ${m.system ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
+                  <div className={`rounded-2xl rounded-bl-sm px-4 py-3 ${m.system ? 'bg-credit/10 border border-credit/30' : 'bg-surface-sunken border border-border'}`}>
                     {m.system
-                      ? <p className="text-sm text-green-900">{m.content}</p>
+                      ? <p className="text-sm text-text">{m.content}</p>
                       : <Markdown>{m.content || (m.streaming ? '…' : '')}</Markdown>}
                   </div>
                 )}
@@ -157,7 +157,7 @@ export default function AdvisorChat({ variant = 'full' }) {
         )}
 
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg bg-debit/10 border border-debit/30 px-4 py-3 text-sm text-debit">
             {error}
           </div>
         )}
@@ -171,7 +171,7 @@ export default function AdvisorChat({ variant = 'full' }) {
             placeholder="Record a payment, update a balance, or ask for advice…"
             rows={2}
             disabled={busy}
-            className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-50"
+            className="w-full resize-none rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-text placeholder-text-subtle focus:border-accent focus:ring-1 focus:ring-accent outline-none disabled:opacity-60"
           />
           <div className="flex justify-end">
             <Button onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>

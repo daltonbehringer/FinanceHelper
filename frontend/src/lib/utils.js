@@ -116,8 +116,10 @@ export function monthlyEquiv(amount, frequency) {
   return amount * (MONTHLY_MULTIPLIERS[frequency] || 1)
 }
 
-export function nextPayday(lastPayDate, frequency) {
-  if (!lastPayDate) return '\u2014'
+// ISO (YYYY-MM-DD) next payday strictly after today, or null. `nextPayday`
+// formats this; computations (e.g. safe-to-spend) compare the raw ISO.
+export function nextPaydayDate(lastPayDate, frequency) {
+  if (!lastPayDate) return null
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   let d = new Date(lastPayDate + 'T00:00:00')
@@ -133,11 +135,18 @@ export function nextPayday(lastPayDate, frequency) {
   }
 
   while (d <= today) d = advance(d)
-  return formatDate(d.toISOString().split('T')[0])
+  return d.toISOString().split('T')[0]
 }
 
-export function nextDueDate(dueDay, lastPaidDate) {
-  if (dueDay == null) return '\u2014'
+export function nextPayday(lastPayDate, frequency) {
+  const iso = nextPaydayDate(lastPayDate, frequency)
+  return iso ? formatDate(iso) : '\u2014'
+}
+
+// ISO (YYYY-MM-DD) next due date for a recurring expense, or null. `nextDueDate`
+// formats this; safe-to-spend compares the raw ISO against the next payday.
+export function nextExpenseDueDate(dueDay, lastPaidDate) {
+  if (dueDay == null) return null
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const y = today.getFullYear()
@@ -159,5 +168,10 @@ export function nextDueDate(dueDay, lastPaidDate) {
       candidate = new Date(candidate.getFullYear(), candidate.getMonth() + 1, dueDay)
     }
   }
-  return formatDate(candidate.toISOString().split('T')[0])
+  return candidate.toISOString().split('T')[0]
+}
+
+export function nextDueDate(dueDay, lastPaidDate) {
+  const iso = nextExpenseDueDate(dueDay, lastPaidDate)
+  return iso ? formatDate(iso) : '—'
 }
