@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
@@ -7,7 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
 import Expenses from './pages/Expenses'
 import Income from './pages/Income'
-import Advisor from './pages/Advisor'
+import Chat from './pages/Chat'
 import History from './pages/History'
 import Settings from './pages/Settings'
 
@@ -25,7 +25,8 @@ export default function App() {
               <Route path="/accounts" element={<Accounts />} />
               <Route path="/expenses" element={<Expenses />} />
               <Route path="/income" element={<Income />} />
-              <Route path="/advisor" element={<Advisor />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/advisor" element={<Navigate to="/chat" replace />} />
               <Route path="/history" element={<History />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

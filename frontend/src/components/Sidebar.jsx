@@ -5,7 +5,7 @@ const navItems = [
   { to: '/accounts', label: 'Accounts', icon: AccountsIcon },
   { to: '/expenses', label: 'Expenses', icon: ExpensesIcon },
   { to: '/income', label: 'Income', icon: IncomeIcon },
-  { to: '/advisor', label: 'Ask Advisor', icon: AdvisorIcon },
+  { to: '/chat', label: 'Chat', icon: AdvisorIcon },
   { to: '/history', label: 'History', icon: HistoryIcon },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]

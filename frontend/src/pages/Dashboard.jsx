@@ -239,8 +239,8 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Advisor Chat */}
-      <AdvisorChat onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
+      {/* Advisor Chat — compact widget: latest response only, no thread history */}
+      <AdvisorChat variant="compact" onUpdate={refetchAccounts} onExpenseUpdate={refetchExpenses} />
 
       {/* Account sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

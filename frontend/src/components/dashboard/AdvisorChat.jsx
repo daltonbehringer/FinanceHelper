@@ -74,13 +74,21 @@ function PreviewCard({ preview, busy, onConfirm, onCancel }) {
   )
 }
 
-export default function AdvisorChat({ onUpdate, onExpenseUpdate }) {
+export default function AdvisorChat({ onUpdate, onExpenseUpdate, variant = 'full' }) {
   const { thread, pending, status, error, busy, send, confirm, cancel } =
     useAdvisorChat({ onUpdate, onExpenseUpdate })
 
   const [text, setText] = useState('')
   const textareaRef = useRef(null)
   const threadEndRef = useRef(null)
+
+  // 'compact' (Dashboard widget): show only the most recent assistant response
+  // and any confirmation card — no running thread, no echoed prompts.
+  // 'full' (Chat page): the whole conversation, scrollable, with quick actions.
+  const compact = variant === 'compact'
+  const displayed = compact
+    ? thread.filter((m) => m.role === 'assistant').slice(-1)
+    : thread
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -114,9 +122,9 @@ export default function AdvisorChat({ onUpdate, onExpenseUpdate }) {
         <h2 className="text-base font-semibold text-gray-900">Financial Advisor</h2>
       </CardHeader>
       <CardBody className="space-y-4">
-        {thread.length > 0 && (
-          <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
-            {thread.map((m, i) => (
+        {(displayed.length > 0 || pending) && (
+          <div className={compact ? 'space-y-3' : 'space-y-3 max-h-[28rem] overflow-y-auto pr-1'}>
+            {displayed.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
                 {m.role === 'user' ? (
                   <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-4 py-2 text-sm text-white whitespace-pre-wrap">
@@ -134,7 +142,7 @@ export default function AdvisorChat({ onUpdate, onExpenseUpdate }) {
             {pending && (
               <PreviewCard preview={pending.preview} busy={status === 'confirming'} onConfirm={confirm} onCancel={cancel} />
             )}
-            <div ref={threadEndRef} />
+            {!compact && <div ref={threadEndRef} />}
           </div>
         )}
 
@@ -155,10 +163,12 @@ export default function AdvisorChat({ onUpdate, onExpenseUpdate }) {
             disabled={busy}
             className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-50"
           />
-          <div className="flex justify-between gap-2">
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => send(RECOMMEND_PROMPT)}>
-              Get recommendation
-            </Button>
+          <div className={`flex gap-2 ${compact ? 'justify-end' : 'justify-between'}`}>
+            {!compact && (
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => send(RECOMMEND_PROMPT)}>
+                Get recommendation
+              </Button>
+            )}
             <Button onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>
               Send
             </Button>
