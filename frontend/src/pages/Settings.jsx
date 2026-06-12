@@ -8,6 +8,7 @@ import Card, { CardHeader, CardBody } from '../components/ui/Card'
 import Input from '../components/ui/Input'
 import Button from '../components/ui/Button'
 import Spinner from '../components/ui/Spinner'
+import BudgetEditor from '../components/settings/BudgetEditor'
 
 export default function Settings() {
   const { settings, loading, refetch } = useSettings()
@@ -16,6 +17,8 @@ export default function Settings() {
   const [minChecking, setMinChecking] = useState('')
   const [defaultPaymentAccountId, setDefaultPaymentAccountId] = useState('')
   const [advicePosture, setAdvicePosture] = useState('default')
+  const [zipCode, setZipCode] = useState('')
+  const [householdSize, setHouseholdSize] = useState('')
   const [saving, setSaving] = useState(false)
 
   const checkingAccounts = accounts.filter(a => a.type === 'checking')
@@ -27,8 +30,10 @@ export default function Settings() {
         settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
       )
       setAdvicePosture(settings.advice_posture || 'default')
+      setZipCode(settings.zip_code || '')
+      setHouseholdSize(settings.household_size != null ? String(settings.household_size) : '')
     }
-  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture])
+  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size])
 
   async function handleSave(e) {
     e.preventDefault()
@@ -46,6 +51,8 @@ export default function Settings() {
           min_checking: value,
           default_payment_account_id: paymentId,
           advice_posture: advicePosture,
+          zip_code: zipCode.trim(),
+          household_size: householdSize ? Number(householdSize) : null,
         }),
       })
       if (resp && resp.ok) {
@@ -158,6 +165,38 @@ export default function Settings() {
               onChange={(e) => setMinChecking(e.target.value)}
               className="flex-1 sm:max-w-xs"
             />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <h2 className="text-base font-semibold text-text">Cost of Living &amp; Budget</h2>
+          </CardHeader>
+          <CardBody className="space-y-5">
+            <p className="text-sm text-text-muted">
+              Your ZIP code and household size let the advisor seed metro-level monthly spending
+              estimates. These are starting points — adjust them to your situation. Together with
+              your income and recurring bills they produce your <span className="font-medium">monthly
+              spending money</span>.
+            </p>
+            <div className="grid grid-cols-2 gap-4 sm:max-w-xs">
+              <Input
+                label="ZIP code"
+                value={zipCode}
+                onChange={(e) => setZipCode(e.target.value)}
+                placeholder="e.g. 94110"
+                inputMode="numeric"
+              />
+              <Input
+                label="Household size"
+                type="number"
+                min="1"
+                value={householdSize}
+                onChange={(e) => setHouseholdSize(e.target.value)}
+                placeholder="e.g. 2"
+              />
+            </div>
+            <BudgetEditor zip={zipCode.trim()} householdSize={householdSize} showToast={showToast} />
           </CardBody>
         </Card>
 

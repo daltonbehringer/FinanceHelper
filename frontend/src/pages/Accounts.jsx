@@ -1,12 +1,16 @@
+import { useState } from 'react'
 import { formatMoney, formatRate, formatDate, formatType, isDebt, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useAccounts } from '../hooks/useAccounts'
 import { useAccountFields } from '../hooks/useAccountFields'
+import { useSettings } from '../hooks/useSettings'
 import { useCrudPage } from '../hooks/useCrudPage'
+import { apiFetch } from '../lib/api'
 import { INVESTMENT_TYPES } from '../lib/constants'
 import Button from '../components/ui/Button'
 import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
+import PayModal from '../components/PayModal'
 import EntityPage, { isInactive } from '../components/crud/EntityPage'
 
 const EMPTY_FORM = {
@@ -149,6 +153,31 @@ export default function Accounts() {
     defaultSort: { col: 'due_date', dir: 'asc' },
   })
 
+  const { settings } = useSettings()
+  const [payTarget, setPayTarget] = useState(null)
+  const [paying, setPaying] = useState(false)
+
+  async function handlePay({ amountCents, sourceId, note }) {
+    setPaying(true)
+    try {
+      const resp = await apiFetch(`/api/accounts/${payTarget.id}/pay`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: amountCents, source_account_id: sourceId, note }),
+      })
+      if (resp && resp.ok) {
+        crud.showToast(`Paid ${payTarget.name}`, 'success')
+        setPayTarget(null)
+        crud.refetch()
+      } else {
+        crud.showToast('Failed to record payment', 'error')
+      }
+    } catch {
+      crud.showToast('Failed to record payment', 'error')
+    } finally {
+      setPaying(false)
+    }
+  }
+
   const columns = [
     {
       key: 'name', label: 'Name', headerClass: 'w-[18%]',
@@ -177,12 +206,14 @@ export default function Accounts() {
   ]
 
   return (
+    <>
     <EntityPage
       crud={crud}
       title="Accounts"
       addLabel="Add Account"
       entityLabel="Account"
       columns={columns}
+      extraActions={(a) => (isDebt(a.type) ? [{ label: 'Pay', onClick: () => setPayTarget(a) }] : [])}
       mobileSortOptions={[
         { value: 'due_date:asc', label: 'Sort: Due Date (soonest)' },
         { value: 'due_date:desc', label: 'Sort: Due Date (latest)' },
@@ -206,5 +237,18 @@ export default function Accounts() {
         </svg>
       }
     />
+    <PayModal
+      isOpen={payTarget != null}
+      onClose={() => setPayTarget(null)}
+      title={payTarget ? `Pay ${payTarget.name}` : 'Pay debt'}
+      label="Debits the source account and reduces this debt by the same amount."
+      defaultAmount={payTarget?.minimum_payment}
+      accounts={crud.items ?? []}
+      defaultSourceId={settings?.default_payment_account_id}
+      requireSource
+      busy={paying}
+      onSubmit={handlePay}
+    />
+    </>
   )
 }

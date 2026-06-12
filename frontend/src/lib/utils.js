@@ -68,6 +68,18 @@ export function formatDate(dateStr) {
   return `${months[month - 1]} ${String(day).padStart(2, '0')}, ${year}`
 }
 
+// Whole days from today (local) until an ISO date. Negative if already past,
+// null if no date. Used for due-soon emphasis on dashboard debt rows.
+export function daysUntil(dateStr) {
+  if (!dateStr) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const datePart = dateStr.split('T')[0]
+  const [year, month, day] = datePart.split('-').map(Number)
+  const target = new Date(year, month - 1, day)
+  return Math.round((target - today) / 86400000)
+}
+
 export function formatDateTime(dateStr) {
   if (!dateStr) return '\u2014'
   const d = new Date(dateStr)

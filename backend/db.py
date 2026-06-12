@@ -322,6 +322,17 @@ def _migrate_settings_advice_posture(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE user_settings ADD COLUMN advice_posture TEXT NOT NULL DEFAULT 'default'")
 
 
+def _migrate_settings_zip_household(conn: sqlite3.Connection):
+    """Add zip_code and household_size columns to user_settings (Phase 3c)."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
+    if not cols:
+        return  # table doesn't exist yet; created fresh with the columns below
+    if "zip_code" not in cols:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN zip_code TEXT")
+    if "household_size" not in cols:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN household_size INTEGER")
+
+
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -342,6 +353,7 @@ def init_db():
         _migrate_expenses_last_paid_date(conn)
         _migrate_settings_default_payment(conn)
         _migrate_settings_advice_posture(conn)
+        _migrate_settings_zip_household(conn)
         _migrate_money_to_cents(conn)
         _migrate_snapshot_timestamps(conn)
 
@@ -400,8 +412,24 @@ def init_db():
             default_payment_account_id  INTEGER REFERENCES accounts(id),
             payment_account_configured  INTEGER NOT NULL DEFAULT 0,
             advice_posture              TEXT NOT NULL DEFAULT 'default',
+            zip_code                    TEXT,
+            household_size              INTEGER,
             updated_at                  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS budget_lines (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            category    TEXT NOT NULL,
+            amount      INTEGER NOT NULL,
+            origin      TEXT NOT NULL DEFAULT 'user'
+                CHECK(origin IN ('llm_estimate','user')),
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_budget_lines_user
+            ON budget_lines(user_id);
 
         CREATE TABLE IF NOT EXISTS recurring_income (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,

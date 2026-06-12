@@ -4,6 +4,7 @@ import { useExpenses } from '../hooks/useExpenses'
 import { useIncome } from '../hooks/useIncome'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useSafeToSpend } from '../hooks/useSafeToSpend'
+import { useSpendingMoney } from '../hooks/useSpendingMoney'
 import { useToast } from '../context/ToastContext'
 import { useAdvisorChatContext } from '../context/AdvisorChatContext'
 import { apiStream } from '../lib/api'
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const { income, loading: incomeLoading, refetch: refetchIncome } = useIncome()
   const { series: netWorthSeries, loading: netWorthLoading } = useNetWorth()
   const { summary: safeToSpend, refetch: refetchSafeToSpend } = useSafeToSpend()
+  const { summary: spendingMoney, refetch: refetchSpendingMoney } = useSpendingMoney()
   const { showToast } = useToast()
   const { registerRefresh } = useAdvisorChatContext()
 
@@ -42,9 +44,9 @@ export default function Dashboard() {
   // the shared chat widget here.
   useEffect(
     () => registerRefresh(() => {
-      refetchAccounts(); refetchExpenses(); refetchIncome(); refetchSafeToSpend()
+      refetchAccounts(); refetchExpenses(); refetchIncome(); refetchSafeToSpend(); refetchSpendingMoney()
     }),
-    [registerRefresh, refetchAccounts, refetchExpenses, refetchIncome, refetchSafeToSpend],
+    [registerRefresh, refetchAccounts, refetchExpenses, refetchIncome, refetchSafeToSpend, refetchSpendingMoney],
   )
 
   const [recommendation, setRecommendation] = useState(null)
@@ -136,8 +138,8 @@ export default function Dashboard() {
       {/* Hero: net-worth chart */}
       <NetWorthHero series={netWorthSeries} loading={netWorthLoading} />
 
-      {/* Stat tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stat tiles — 5-up on desktop (Phase 3c: added Spending money), 2-up on mobile */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Next payday"
           value={stats.nextPay ? formatDate(stats.nextPay) : '—'}
@@ -152,6 +154,12 @@ export default function Dashboard() {
               ? `before ${formatDate(safeToSpend.next_payday.date)}`
               : 'after upcoming bills'
           }
+        />
+        <StatCard
+          label="Spending money / mo"
+          value={spendingMoney?.has_budget ? formatMoney(spendingMoney.spending_money) : '—'}
+          valueColor={(spendingMoney?.spending_money ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
+          subtitle={spendingMoney?.has_budget ? 'after bills & budget' : 'set a budget in Settings'}
         />
         <StatCard
           label="Total debt"

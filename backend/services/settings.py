@@ -18,6 +18,8 @@ def update_settings(
     min_checking: int | None = None,
     default_payment_account_id: int | None = None,
     advice_posture: str | None = None,
+    zip_code: str | None = None,
+    household_size: int | None = None,
     ctx: EventContext,
 ) -> dict:
     """Upsert user settings. `default_payment_account_id=0` means "explicitly
@@ -45,6 +47,10 @@ def update_settings(
                     updates["payment_account_configured"] = 1
                 if advice_posture is not None:
                     updates["advice_posture"] = advice_posture
+                if zip_code is not None:
+                    updates["zip_code"] = zip_code or None
+                if household_size is not None:
+                    updates["household_size"] = household_size or None
                 if updates:
                     set_clause = ", ".join(f"{k} = ?" for k in updates)
                     conn.execute(
@@ -69,11 +75,13 @@ def update_settings(
                 cur = conn.execute(
                     """
                     INSERT INTO user_settings (user_id, min_checking, default_payment_account_id,
-                                               payment_account_configured, advice_posture, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                                               payment_account_configured, advice_posture,
+                                               zip_code, household_size, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (user_id, min_checking or 0, default_id, configured,
-                     advice_posture or "default", now),
+                     advice_posture or "default", zip_code or None,
+                     household_size or None, now),
                 )
                 row = conn.execute(
                     "SELECT * FROM user_settings WHERE id = ?", (cur.lastrowid,)

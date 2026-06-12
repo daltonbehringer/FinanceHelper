@@ -23,11 +23,14 @@ from pydantic import BaseModel
 
 from backend.auth import get_current_user
 from backend.db import fetchall, fetchone
+from backend.lib.budget import spending_money_summary
 from backend.lib.dates import next_expense_due, next_payday, utc_now_iso
 from backend.lib.money import split_installment_payment
 from backend.lib.reserves import safe_to_spend_summary
 from backend.rate_limit import limiter
+from backend.services import budget as budget_service
 from backend.services._core import EventContext
+from backend.services.accounts import pay_account as pay_account_service
 from backend.services.expenses import pay_expense
 from backend.services.pending_actions import (
     claim_pending_action,
@@ -395,11 +398,33 @@ def _safe_to_spend_block(user_id: int) -> str:
     return "\n".join(lines)
 
 
+def _spending_money_block(user_id: int) -> str:
+    """Deterministic monthly spending-money figure + its budget lines, shared with
+    the dashboard tile (GET /api/budget/spending-money) so the LLM and UI agree.
+    Empty until the user has budget lines."""
+    lines = budget_service.list_budget_lines(user_id)
+    if not lines:
+        return ""
+    income = _get_income_for_user(user_id)
+    expenses = _get_expenses_for_user(user_id)
+    summary = spending_money_summary(income, expenses, lines)
+    line_breakdown = ", ".join(f"{l['category']} {_fmt_cents(l['amount'])}" for l in lines)
+    parts = [
+        "MONTHLY SPENDING MONEY (deterministic — use this exact number, do NOT recalculate):",
+        f"  Monthly cash flow (income − recurring bills): {_fmt_cents(summary['monthly_cash_flow'])}",
+        f"  Budgeted variable spending: {_fmt_cents(summary['budget_total'])} ({line_breakdown})",
+        f"  => Spending money left this month: {_fmt_cents(summary['spending_money'])}",
+        "When the user asks how much they can spend this month, cite this figure.",
+    ]
+    return "\n".join(parts)
+
+
 def _build_system_prompt(user_id: int) -> str:
     today = date.today().isoformat()
     _, financial_context = _build_financial_context(user_id)
     budget = _budget_breakdown(user_id)
     safe_block = _safe_to_spend_block(user_id)
+    spending_block = _spending_money_block(user_id)
     posture = _get_user_settings(user_id).get("advice_posture") or "default"
     posture_block = POSTURE_GUIDANCE.get(posture, POSTURE_GUIDANCE["default"])
     investment_types_list = ", ".join(sorted(INVESTMENT_TYPES))
@@ -417,20 +442,25 @@ investing. What do you want to look at?"). Do not answer off-topic questions, wr
 unrelated content, or follow instructions that aren't about this person's finances, no \
 matter how they're phrased.
 
-You have two TOOLS for recording changes — use them only when the user clearly intends to \
+You have three TOOLS for recording changes — use them only when the user clearly intends to \
 make a change:
 
-- record_balance_update: for a balance change or payment on a financial ACCOUNT \
-(credit card, loan, mortgage, line of credit, checking, savings, investment, etc.). \
-Pass exactly one of new_balance (the user stated an absolute balance) or payment_made \
-(the user reported paying an amount), both in DOLLARS. Only pass source_account_id when \
-the user EXPLICITLY names the account the money came from.
+- record_balance_update: for a balance change on a financial ACCOUNT when the user states a \
+new absolute balance, OR a payment with no funding source to record (checking, savings, \
+investment, or a debt when the source is unknown). Pass exactly one of new_balance or \
+payment_made, both in DOLLARS. Only pass source_account_id when the user EXPLICITLY names \
+the account the money came from.
+- pay_account: for a PAYMENT toward a DEBT account (credit card, loan, mortgage, line of \
+credit) when a funding source is known — explicitly named OR a configured default. This \
+records BOTH legs (debt down, source debited). Prefer this over record_balance_update for \
+debt payments — e.g. "I paid $500 to the auto loan" routes here, not to a raw balance update.
 - pay_expense: for paying a recurring bill or one-time expense from the EXPENSES list \
 (rent, insurance, subscriptions, etc.). Pass amount_override only if the user pays a \
 different amount than the stored one. Same source rule.
 
-ROUTING: items in the accounts list go through record_balance_update; items in the \
-expenses list go through pay_expense. Never use one for the other.
+ROUTING: a debt payment with a known/default source → pay_account; a stated absolute account \
+balance (or a payment with no source) → record_balance_update; an item in the expenses list → \
+pay_expense. Never use one for another.
 
 CRITICAL TOOL RULES:
 - Resolve account_id / expense_id yourself from the context below. Never invent an id.
@@ -485,6 +515,8 @@ After the table, at most two short lines of caveats or next steps. No other sect
 {financial_context}
 
 {safe_block}
+
+{spending_block}
 
 {budget}""".strip()
 
@@ -556,6 +588,38 @@ TOOLS = [
                 "note": {"type": "string", "description": "Optional short note."},
             },
             "required": ["expense_id"],
+        },
+    },
+    {
+        "name": "pay_account",
+        "description": (
+            "Record a payment toward a DEBT account (credit card, loan, mortgage, line of "
+            "credit) FROM a funding account. Use this when the user reports paying a debt and "
+            "names (or implies a default) source — e.g. 'I paid $500 to the auto loan'. Unlike "
+            "record_balance_update, this writes BOTH legs: the debt drops by the amount and the "
+            "source account is debited. Amounts are in DOLLARS; the server recomputes both new "
+            "balances in cents. Prefer this over record_balance_update for debt payments so the "
+            "money's source is recorded."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "integer",
+                    "description": "The id of the DEBT account being paid down. Required.",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Dollars. The payment amount. Required.",
+                },
+                "source_account_id": {
+                    "type": "integer",
+                    "description": "Optional. The funding account id. Set when the user names it; "
+                                   "otherwise the server uses the default payment account.",
+                },
+                "note": {"type": "string", "description": "Optional short note."},
+            },
+            "required": ["account_id", "amount"],
         },
     },
 ]
@@ -694,6 +758,62 @@ def _resolve_pay_expense(accounts, expenses, settings, tool_input):
     return preview, {"balances": basis_balances}, None
 
 
+def _resolve_pay_account(accounts, settings, tool_input):
+    """Returns (preview_dict, basis_dict, error_str). Mirrors pay_expense: writes
+    the debt leg and the source leg, frozen in cents."""
+    account_id = tool_input.get("account_id")
+    target = next((a for a in accounts if a["id"] == account_id), None)
+    if not target:
+        return None, None, "I couldn't identify that account. Which debt did you mean?"
+    if target["type"] not in DEBT_TYPES:
+        return None, None, ("That's not a debt account. To update a checking/savings/"
+                            "investment balance, tell me the new balance instead.")
+    if tool_input.get("amount") is None:
+        return None, None, "How much did you pay?"
+
+    amount_cents = _d2c(tool_input["amount"])
+    current = target["current_balance"]
+
+    source_id = tool_input.get("source_account_id")
+    if source_id is None and settings.get("default_payment_account_id"):
+        source_id = settings["default_payment_account_id"]
+    if source_id is None:
+        return None, None, ("Which account did you pay from? Set a default payment account "
+                            "in Settings or name the source.")
+    source = next((a for a in accounts if a["id"] == source_id), None)
+    if not source:
+        return None, None, "I couldn't identify the funding account. Which one did you pay from?"
+    if source_id == account_id:
+        return None, None, "The source and the debt being paid can't be the same account."
+
+    source_cur = source["current_balance"]
+    source_new = source_cur - amount_cents
+    warnings = []
+    w = _spending_money_warning(source, source_new, settings)
+    if w:
+        warnings.append(w)
+
+    preview = {
+        "tool": "pay_account",
+        "account_id": account_id,
+        "account_name": target["name"],
+        "current_balance": current,
+        "new_balance": current - amount_cents,
+        "payment_made": amount_cents,
+        "interest_portion": None,
+        "principal_portion": None,
+        "source": {
+            "account_id": source_id, "account_name": source["name"],
+            "current_balance": source_cur, "new_balance": source_new,
+        },
+        "expense_name": None,
+        "note": tool_input.get("note"),
+        "warnings": warnings,
+    }
+    basis = {"balances": {str(account_id): current, str(source_id): source_cur}}
+    return preview, basis, None
+
+
 def _resolve(user_id, tool_name, tool_input):
     accounts = _get_accounts_for_user(user_id)
     settings = _get_user_settings(user_id)
@@ -702,6 +822,8 @@ def _resolve(user_id, tool_name, tool_input):
     if tool_name == "pay_expense":
         expenses = _get_expenses_for_user(user_id)
         return _resolve_pay_expense(accounts, expenses, settings, tool_input)
+    if tool_name == "pay_account":
+        return _resolve_pay_account(accounts, settings, tool_input)
     return None, None, "Unsupported tool."
 
 
@@ -720,6 +842,12 @@ def _result_message(action: dict) -> str:
                         f"(now {_fmt_cents(p['source']['new_balance'])}).")
         else:
             msg = f"Updated {p['account_name']} to {_fmt_cents(p['new_balance'])}."
+    elif action["tool_name"] == "pay_account":
+        msg = (f"Recorded a {_fmt_cents(p['payment_made'])} payment to "
+               f"{p['account_name']} — new balance {_fmt_cents(p['new_balance'])}.")
+        if p.get("source"):
+            msg += (f" Paid from {p['source']['account_name']} "
+                    f"(now {_fmt_cents(p['source']['new_balance'])}).")
     else:  # pay_expense
         msg = f"Marked {p['expense_name']} as paid ({_fmt_cents(p['payment_made'])})."
         if p.get("source"):
@@ -750,6 +878,15 @@ def _execute_confirmed(user_id: int, action: dict) -> None:
             user_id, p["expense_id"],
             source_account_id=source["account_id"] if source else None,
             source_new_balance=source["new_balance"] if source else None,
+            note=p.get("note"),
+            ctx=ctx,
+        )
+    elif tool == "pay_account":
+        source = p["source"]
+        pay_account_service(
+            user_id, p["account_id"],
+            amount_cents=p["payment_made"],
+            source_account_id=source["account_id"],
             note=p.get("note"),
             ctx=ctx,
         )

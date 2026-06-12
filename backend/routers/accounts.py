@@ -35,6 +35,12 @@ class AccountUpdate(BaseModel):
     promo_end_date: Optional[str] = None
 
 
+class AccountPayRequest(BaseModel):
+    amount: StrictInt  # integer cents; floats are rejected
+    source_account_id: int
+    note: Optional[str] = None
+
+
 @router.get("")
 async def list_accounts(
     include_inactive: int = Query(0),
@@ -81,4 +87,18 @@ async def update_account(
 async def deactivate_account(account_id: int, user_id: int = Depends(get_current_user)):
     return accounts_service.deactivate_account(
         user_id, account_id, EventContext(source="user")
+    )
+
+
+@router.post("/{account_id}/pay")
+async def pay_account(
+    account_id: int, body: AccountPayRequest, user_id: int = Depends(get_current_user)
+):
+    return accounts_service.pay_account(
+        user_id,
+        account_id,
+        amount_cents=body.amount,
+        source_account_id=body.source_account_id,
+        note=body.note,
+        ctx=EventContext(source="user"),
     )

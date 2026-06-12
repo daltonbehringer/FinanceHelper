@@ -2,10 +2,22 @@ import { Link } from 'react-router-dom'
 import Card, { CardHeader, CardBody } from '../ui/Card'
 import Badge from '../ui/Badge'
 import EmptyState from '../ui/EmptyState'
-import { formatMoney, formatRate, isDebt } from '../../lib/utils'
+import { daysUntil, formatDate, formatMoney, formatRate, isDebt } from '../../lib/utils'
 
 function resolvedBalance(a) {
   return a.current_balance ?? a.balance ?? 0
+}
+
+function DueDate({ dueDate }) {
+  if (!dueDate) return null
+  const days = daysUntil(dueDate)
+  const soon = days != null && days >= 0 && days <= 7
+  return (
+    <span className={`text-xs tnum ${soon ? 'text-warning font-medium' : 'text-text-subtle'}`}>
+      Due {formatDate(dueDate)}
+      {soon && (days === 0 ? ' · today' : ` · ${days}d`)}
+    </span>
+  )
 }
 
 function AccountRow({ account, debt }) {
@@ -15,11 +27,14 @@ function AccountRow({ account, debt }) {
       to="/accounts"
       className="flex items-center justify-between gap-3 px-5 py-2.5 border-b border-border last:border-0 hover:bg-surface-raised/50 transition-colors"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-sm text-text truncate">{account.name}</span>
-        {rate != null && rate !== 0 && (
-          <Badge color="gray" size="sm" className="flex-shrink-0">{formatRate(rate)}</Badge>
-        )}
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm text-text truncate">{account.name}</span>
+          {rate != null && rate !== 0 && (
+            <Badge color="gray" size="sm" className="flex-shrink-0">{formatRate(rate)}</Badge>
+          )}
+        </div>
+        {debt && <DueDate dueDate={account.due_date} />}
       </div>
       <span className={`text-sm font-semibold tnum flex-shrink-0 ${debt ? 'text-debit' : 'text-text'}`}>
         {formatMoney(resolvedBalance(account))}

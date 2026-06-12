@@ -17,11 +17,14 @@ function Row({ label, value }) {
 // One generic confirmation card driven entirely by preview_json (cents).
 function PreviewCard({ preview, busy, onConfirm, onCancel }) {
   const isExpense = preview.tool === 'pay_expense'
+  const title = {
+    pay_expense: 'Confirm expense payment',
+    pay_account: 'Confirm debt payment',
+    record_balance_update: 'Confirm balance update',
+  }[preview.tool] || 'Confirm balance update'
   return (
     <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-4 space-y-3">
-      <h3 className="text-sm font-semibold text-text">
-        {isExpense ? 'Confirm expense payment' : 'Confirm balance update'}
-      </h3>
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         {isExpense

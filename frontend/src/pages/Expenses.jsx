@@ -1,10 +1,15 @@
+import { useState } from 'react'
 import { formatMoney, formatDate, nextDueDate, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useExpenses } from '../hooks/useExpenses'
+import { useAccounts } from '../hooks/useAccounts'
+import { useSettings } from '../hooks/useSettings'
 import { useCrudPage } from '../hooks/useCrudPage'
+import { apiFetch } from '../lib/api'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
+import PayModal from '../components/PayModal'
 import EntityPage, { isInactive } from '../components/crud/EntityPage'
 
 const EMPTY_FORM = { name: '', amount: '', category: '', isOneTime: false, due_day: '', due_date: '' }
@@ -119,6 +124,39 @@ export default function Expenses() {
     defaultSort: { col: 'due', dir: 'asc' },
   })
 
+  const { accounts } = useAccounts()
+  const { settings } = useSettings()
+  const [payTarget, setPayTarget] = useState(null)
+  const [paying, setPaying] = useState(false)
+
+  async function handlePay({ amountCents, sourceId, note }) {
+    setPaying(true)
+    try {
+      const body = { note }
+      if (sourceId) {
+        const source = accounts.find((a) => a.id === sourceId)
+        const cur = source?.current_balance ?? source?.balance ?? 0
+        body.source_account_id = sourceId
+        body.source_new_balance = cur - amountCents
+      }
+      const resp = await apiFetch(`/api/expenses/${payTarget.id}/pay`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (resp && resp.ok) {
+        crud.showToast(`Paid ${payTarget.name}`, 'success')
+        setPayTarget(null)
+        crud.refetch()
+      } else {
+        crud.showToast('Failed to record payment', 'error')
+      }
+    } catch {
+      crud.showToast('Failed to record payment', 'error')
+    } finally {
+      setPaying(false)
+    }
+  }
+
   const columns = [
     { key: 'name', label: 'Name', headerClass: 'w-[25%]', cellClass: 'font-medium text-text truncate', render: (e) => e.name },
     { key: 'type', label: 'Type', headerClass: 'w-[15%]', render: (e) => <Badge color={isRecurring(e) ? 'green' : 'blue'}>{isRecurring(e) ? 'Recurring' : 'One-time'}</Badge> },
@@ -128,12 +166,14 @@ export default function Expenses() {
   ]
 
   return (
+    <>
     <EntityPage
       crud={crud}
       title="Expenses"
       addLabel="Add Expense"
       entityLabel="Expense"
       columns={columns}
+      extraActions={(exp) => [{ label: 'Pay', onClick: () => setPayTarget(exp) }]}
       mobileSortOptions={[
         { value: 'due:asc', label: 'Sort: Due Date (soonest)' },
         { value: 'due:desc', label: 'Sort: Due Date (latest)' },
@@ -158,5 +198,17 @@ export default function Expenses() {
         </svg>
       }
     />
+    <PayModal
+      isOpen={payTarget != null}
+      onClose={() => setPayTarget(null)}
+      title={payTarget ? `Pay ${payTarget.name}` : 'Pay expense'}
+      label="Marks this expense paid and advances its due date."
+      defaultAmount={payTarget?.amount}
+      accounts={accounts}
+      defaultSourceId={settings?.default_payment_account_id}
+      busy={paying}
+      onSubmit={handlePay}
+    />
+    </>
   )
 }

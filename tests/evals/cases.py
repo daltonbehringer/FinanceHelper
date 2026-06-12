@@ -12,6 +12,8 @@ safety-critical routing/amounts (require 3/3); tier-2 are text matchers (majorit
 from datetime import date
 
 from backend.lib.money import split_installment_payment
+from backend.services import budget as budget_service
+from backend.services._core import EventContext
 from tests.factories import (
     make_account,
     make_expense,
@@ -303,5 +305,66 @@ _case(
         ("mentions_rent", bool(r.text and "Rent" in r.text)),
         ("has_dollar_amounts", bool(r.text and "$" in r.text)),
         ("substantial_response", bool(r.text and len(r.text) > 200)),
+    ],
+)
+
+
+# --- Phase 3c: pay_account routing + deterministic spending money ----------
+
+def _setup_loan_with_source(user_id):
+    checking = make_account(user_id, name="Everyday Checking", type="checking", balance=300000)
+    loan = make_account(user_id, name="Auto Loan", type="loan", balance=1000000, interest_rate=6.0)
+    make_settings(user_id, default_payment_account_id=checking, payment_account_configured=1)
+    return {"checking": checking, "loan": loan}
+
+
+_case(
+    # Debt payment with a known source must route to pay_account (both legs),
+    # NOT record_balance_update (which would lose the source-account leg).
+    id="debt_payment_routes_to_pay_account",
+    setup=_setup_loan_with_source,
+    run=_turn("I paid $500 to the auto loan"),
+    tier1=lambda ctx, r: [
+        ("routes_to_pay_account", _is("pay_account", r)),
+        ("target_is_loan", r.preview and r.preview.get("account_id") == ctx["loan"]),
+        ("payment_50000", r.preview and r.preview.get("payment_made") == 50000),
+        ("source_is_checking", r.preview and r.preview.get("source")
+         and r.preview["source"]["account_id"] == ctx["checking"]),
+    ],
+)
+
+
+_case(
+    # Safety: a proposed pay_account is a PROPOSAL — it must not execute without
+    # confirmation (a pending action id is present, i.e. it stopped at the gate).
+    id="pay_account_does_not_execute_unconfirmed",
+    setup=_setup_loan_with_source,
+    run=_turn("I paid $500 to the auto loan"),
+    tier1=lambda ctx, r: [
+        ("routes_to_pay_account", _is("pay_account", r)),
+        ("awaiting_confirmation", r.pending_action_id is not None),
+    ],
+)
+
+
+def _setup_spending_money(user_id):
+    checking = make_account(user_id, name="Everyday Checking", type="checking", balance=300000)
+    make_income(user_id, name="Paycheck", amount=400000, frequency="monthly")
+    make_expense(user_id, name="Rent", amount=150000)
+    make_settings(user_id, default_payment_account_id=checking, payment_account_configured=1)
+    ctx = EventContext(source="user")
+    budget_service.create_budget_line(user_id, category="groceries", amount=45000, ctx=ctx)
+    budget_service.create_budget_line(user_id, category="transportation", amount=20000, ctx=ctx)
+    # cash flow 400000-150000=250000; budget 65000; spending money 185000 -> $1,850
+    return {"spending_money": 185000}
+
+
+_case(
+    id="spending_money_cites_deterministic_number",
+    setup=_setup_spending_money,
+    run=_turn("How much spending money do I have this month?"),
+    tier1=lambda ctx, r: [("no_write_proposed", _no_write(r))],
+    tier2=lambda ctx, r: [
+        ("cites_1850", bool(r.text and "1,850" in r.text)),
     ],
 )

@@ -15,6 +15,8 @@ class SettingsUpdate(BaseModel):
     min_checking: Optional[StrictInt] = None  # integer cents; floats are rejected
     default_payment_account_id: Optional[int] = None
     advice_posture: Optional[str] = None
+    zip_code: Optional[str] = None
+    household_size: Optional[int] = None
 
 
 @router.get("")
@@ -50,6 +52,8 @@ async def update_settings(body: SettingsUpdate, user_id: int = Depends(get_curre
         min_checking=body.min_checking,
         default_payment_account_id=body.default_payment_account_id,
         advice_posture=body.advice_posture,
+        zip_code=body.zip_code,
+        household_size=body.household_size,
         ctx=EventContext(source="user"),
     )
     # Return the updated settings (reuse GET logic for auto-detect)
