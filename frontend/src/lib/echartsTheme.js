@@ -1,4 +1,4 @@
-import * as echarts from 'echarts'
+import echarts from './echarts'
 
 /* Chart palette — mirrors the `--color-chart-*` / surface tokens in index.css so
    charts and UI share exact colors. Keep these hexes in sync with @theme. */
@@ -74,12 +74,16 @@ export function ensureChartTheme() {
   return THEME_NAME
 }
 
-/** A vertical gradient fill for area series (top -> transparent). */
+/** A vertical gradient fill for area series (top -> transparent). Returned as a
+ *  plain gradient object so the tree-shaken core needs no `echarts.graphic`. */
 export function areaGradient(hex, topOpacity = 0.35) {
-  return new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-    { offset: 0, color: hexToRgba(hex, topOpacity) },
-    { offset: 1, color: hexToRgba(hex, 0) },
-  ])
+  return {
+    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+    colorStops: [
+      { offset: 0, color: hexToRgba(hex, topOpacity) },
+      { offset: 1, color: hexToRgba(hex, 0) },
+    ],
+  }
 }
 
 function hexToRgba(hex, a) {

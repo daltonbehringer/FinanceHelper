@@ -64,7 +64,7 @@ export default function Settings() {
   if (loading || accountsLoading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Spinner size="lg" className="text-gray-400" />
+        <Spinner size="lg" className="text-accent" />
       </div>
     )
   }
@@ -72,8 +72,8 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-text">Settings</h1>
+        <p className="text-sm text-text-muted mt-1">
           Configure how the AI advisor manages your finances.
         </p>
       </div>
@@ -81,10 +81,10 @@ export default function Settings() {
       <form onSubmit={handleSave} className="space-y-6">
         <Card>
           <CardHeader>
-            <h2 className="text-base font-semibold text-gray-900">Advice Posture</h2>
+            <h2 className="text-base font-semibold text-text">Advice Posture</h2>
           </CardHeader>
           <CardBody>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-text-muted mb-4">
               Tune how the advisor weighs paying down debt versus keeping a cushion and
               investing. <span className="font-medium">Default</span> lets the advisor pick the
               posture that best fits your situation.
@@ -105,21 +105,21 @@ export default function Settings() {
 
         <Card>
           <CardHeader>
-            <h2 className="text-base font-semibold text-gray-900">Default Payment Account</h2>
+            <h2 className="text-base font-semibold text-text">Default Payment Account</h2>
           </CardHeader>
           <CardBody>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-text-muted mb-4">
               Select the checking account you typically pay bills from. When you report a payment
               (e.g. "made minimum payment on Amex"), the advisor will automatically deduct
               the payment from this account too.
               {checkingAccounts.length === 1 && (
-                <span className="block mt-2 text-blue-600 font-medium">
+                <span className="block mt-2 text-accent font-medium">
                   Auto-detected: you have one checking account, so it's set as the default.
                 </span>
               )}
             </p>
             {checkingAccounts.length === 0 ? (
-              <p className="text-sm text-amber-600">
+              <p className="text-sm text-warning">
                 No checking accounts found. Add a checking account first.
               </p>
             ) : (
@@ -139,10 +139,10 @@ export default function Settings() {
 
         <Card>
           <CardHeader>
-            <h2 className="text-base font-semibold text-gray-900">Monthly Spending Money</h2>
+            <h2 className="text-base font-semibold text-text">Monthly Spending Money</h2>
           </CardHeader>
           <CardBody>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-text-muted mb-4">
               How much you keep available each month for everyday variable expenses — groceries,
               gas, transportation, and the like. The advisor reserves this for you: it won't
               recommend debt or savings that dip into it, and it plans so your "safe to spend"

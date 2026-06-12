@@ -14,5 +14,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        // echarts changes rarely and is the heaviest dep — split it into its own
+        // long-cacheable chunk (and keep the app chunk under the size warning).
+        manualChunks: {
+          echarts: ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+        },
+      },
+    },
   },
 })

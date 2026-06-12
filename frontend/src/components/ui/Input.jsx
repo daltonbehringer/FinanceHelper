@@ -2,7 +2,7 @@ export default function Input({ label, className = '', ...props }) {
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-text-muted mb-1">
           {label}
         </label>
       )}
@@ -20,7 +20,7 @@ export function Select({ label, children, className = '', ...props }) {
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-text-muted mb-1">
           {label}
         </label>
       )}
