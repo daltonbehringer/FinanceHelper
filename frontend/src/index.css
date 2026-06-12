@@ -1,16 +1,12 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   Phase 3a design tokens — dark is the only theme.
+   Design tokens — dark is the only theme.
 
-   Two layers live here:
-   1. Named semantic tokens (surface/border/text/credit/debit/chart-*) used by
-      the migrated ui/ primitives and the rewritten History page.
-   2. An INVERTED neutral ramp (gray-50…900 reversed, white kept as white) so the
-      untouched pages — which still use raw `text-gray-700`, `bg-gray-50`, etc. —
-      render dark-correct without being rewritten. `white` is left untouched so
-      `text-white` button/sidebar labels stay light on their colored fills; the
-      handful of `bg-white` surfaces were migrated to `bg-surface` by hand.
+   Named semantic tokens (surface/border/text/credit/debit/chart-*) used across
+   the app. The Phase 3a inverted Tailwind gray ramp was removed in Phase 3b once
+   every surface had been migrated off raw `gray-*`; `white` is intentionally
+   left as-is so `text-white` labels stay light on their colored fills.
    ============================================================================ */
 
 @theme {
@@ -57,18 +53,6 @@
   --color-chart-accent2: #a371f7;
   --color-chart-grid: #1f2630;
   --color-chart-axis: #6e7b8a;
-
-  /* Inverted neutral ramp (legacy bleed; white intentionally NOT inverted) */
-  --color-gray-50: #0d1117;
-  --color-gray-100: #161b22;
-  --color-gray-200: #283039;
-  --color-gray-300: #3a444f;
-  --color-gray-400: #56616e;
-  --color-gray-500: #768290;
-  --color-gray-600: #9aa7b4;
-  --color-gray-700: #c2cbd6;
-  --color-gray-800: #dde3ea;
-  --color-gray-900: #eef2f6;
 
   /* Type scale + radii */
   --text-2xs: 0.6875rem;

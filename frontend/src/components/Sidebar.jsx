@@ -38,7 +38,7 @@ export default function Sidebar({ open, onClose }) {
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               ${isActive
                 ? 'bg-accent text-white'
-                : 'text-gray-400 hover:text-white hover:bg-navy-light'
+                : 'text-text-muted hover:text-white hover:bg-navy-light'
               }`
             }
           >
@@ -49,7 +49,7 @@ export default function Sidebar({ open, onClose }) {
       </nav>
 
       <div className="p-4 border-t border-navy-light">
-        <p className="text-xs text-gray-500 text-center">Finance AI v1.2</p>
+        <p className="text-xs text-text-subtle text-center">Finance AI v1.2</p>
       </div>
     </aside>
   )
