@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, StrictInt
+from pydantic import BaseModel, Field, StrictInt
 
 from backend.auth import get_current_user
 from backend.db import fetchall
@@ -12,9 +12,12 @@ router = APIRouter(prefix="/api/income", tags=["income"])
 
 VALID_FREQUENCIES = {"weekly", "biweekly", "semimonthly", "monthly", "annual"}
 
+# Bounded free-text that flows into LLM context (Phase 4, WS4).
+MAX_TEXT = 200
+
 
 class IncomeCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=MAX_TEXT)
     amount: StrictInt  # integer cents; floats are rejected
     frequency: str
     income_day: Optional[int] = None  # day of month (1-28), optional
@@ -22,7 +25,7 @@ class IncomeCreate(BaseModel):
 
 
 class IncomeUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     amount: Optional[StrictInt] = None
     frequency: Optional[str] = None
     income_day: Optional[int] = None

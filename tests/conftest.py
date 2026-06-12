@@ -8,6 +8,20 @@ called: get_current_user is overridden via FastAPI dependency_overrides.
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    """Rate limits must not interfere with functional tests (which share one
+    key — Stytch is bypassed). The dedicated rate-limit tests re-enable the
+    limiter for themselves (a module-local autouse fixture, which pytest sets up
+    after this conftest fixture)."""
+    from backend.rate_limit import limiter
+
+    previous = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = previous
+
+
 @pytest.fixture
 def temp_db(tmp_path, monkeypatch):
     """Point backend.db at a fresh temp DB and create the real schema."""

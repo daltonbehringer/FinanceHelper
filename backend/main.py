@@ -15,6 +15,7 @@ load_dotenv()
 
 from backend.auth import router as auth_router
 from backend.db import init_db
+from backend.middleware import BodyGuardMiddleware, SecurityHeadersMiddleware
 from backend.rate_limit import limiter
 from backend.routers.accounts import router as accounts_router
 from backend.routers.ai import router as ai_router
@@ -61,6 +62,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Hardening (Phase 4, WS2). Added last → outermost, so security headers land on
+# every response (CORS preflights and rejections included) and the body cap runs
+# before any handler. Pure-ASGI so the SSE chat stream is not buffered.
+app.add_middleware(BodyGuardMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router)
 app.include_router(accounts_router)

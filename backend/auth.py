@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from stytch.core.response_base import StytchError
 
-from backend.db import execute, fetchone
+from backend.db import fetchone, get_db
 from backend.lib.dates import utc_now_iso
+from backend.rate_limit import cache_user_for_token, limiter
+from backend.services._core import EventContext, log_event
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -29,15 +31,56 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() != "false"
 
 
 def _resolve_user(stytch_user_id: str, email: str) -> int:
-    """Return the local user id for a Stytch user, creating it on first login."""
+    """Return the local user id for a Stytch user, creating it on first login.
+
+    On creation, emit a `user`/`create` audit row in the same transaction
+    (Phase 4: user creation was previously unlogged). source='system'. These
+    rows are excluded from the default History view (see routers/events.py)."""
     row = fetchone("SELECT id FROM users WHERE stytch_user_id = ?", (stytch_user_id,))
     if row:
         return row["id"]
-    execute(
-        "INSERT INTO users (stytch_user_id, email, created_at) VALUES (?, ?, ?)",
-        (stytch_user_id, email, utc_now_iso()),
-    )
-    return fetchone("SELECT id FROM users WHERE stytch_user_id = ?", (stytch_user_id,))["id"]
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO users (stytch_user_id, email, created_at) VALUES (?, ?, ?)",
+            (stytch_user_id, email, utc_now_iso()),
+        )
+        user_id = cur.lastrowid
+        log_event(
+            conn,
+            user_id=user_id,
+            entity_type="user",
+            entity_id=user_id,
+            action="create",
+            ctx=EventContext(source="system", source_detail="auth"),
+            changes={"email": email},
+        )
+        conn.commit()
+        return user_id
+    finally:
+        conn.close()
+
+
+def _log_auth_event(user_id: int, action: str, changes: dict | None = None) -> None:
+    """Best-effort audit row for an auth event (e.g. per-session 'login').
+    Never raises into the auth flow — an audit write must not block login."""
+    try:
+        conn = get_db()
+        try:
+            log_event(
+                conn,
+                user_id=user_id,
+                entity_type="user",
+                entity_id=user_id,
+                action=action,
+                ctx=EventContext(source="system", source_detail="auth"),
+                changes=changes,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -75,7 +118,11 @@ async def get_current_user(request: Request) -> int:
 
     stytch_user_id = resp.user.user_id
     email = resp.user.emails[0].email if resp.user.emails else ""
-    return _resolve_user(stytch_user_id, email)
+    user_id = _resolve_user(stytch_user_id, email)
+    # Cache token->user_id so the rate limiter keys by user_id without paying a
+    # Stytch round-trip in its key function (Phase 4, WS2).
+    cache_user_for_token(token, user_id)
+    return user_id
 
 
 @router.get("/login")
@@ -95,15 +142,26 @@ async def login():
 
 
 @router.get("/callback")
-async def callback(token: str):
+@limiter.limit("20/minute")
+async def callback(request: Request, token: str):
     """Stytch OAuth lands here. Validate, set an HttpOnly session cookie, and
-    redirect to the frontend. The session token never appears in any URL."""
+    redirect to the frontend. The session token never appears in any URL.
+
+    Rate-limited (keyed by client IP here, since no session exists yet) to blunt
+    brute/abuse against the OAuth exchange (Phase 4, WS2)."""
     try:
         resp = stytch_client.oauth.authenticate(
             token=token, session_duration_minutes=SESSION_DURATION_MINUTES
         )
     except StytchError:
         raise HTTPException(status_code=401, detail="OAuth authentication failed")
+
+    stytch_user_id = resp.user.user_id
+    email = resp.user.emails[0].email if resp.user.emails else ""
+    user_id = _resolve_user(stytch_user_id, email)
+    cache_user_for_token(resp.session_token, user_id)
+    # Per-session audit row (Phase 4, WS5). Non-default-visible in History.
+    _log_auth_event(user_id, "login")
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
     response = RedirectResponse(url=frontend_url, status_code=302)

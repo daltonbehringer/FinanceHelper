@@ -1,7 +1,11 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, StrictInt
+from pydantic import BaseModel, Field, StrictInt
+
+# Generous-but-bounded cap on free-text fields that flow into the LLM context
+# (Phase 4, WS4). Long enough for any real label; blocks token-stuffing/abuse.
+MAX_TEXT = 200
 
 from backend.auth import get_current_user
 from backend.db import fetchall
@@ -12,7 +16,7 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
 class AccountCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=MAX_TEXT)
     type: str
     balance: StrictInt = 0  # integer cents; floats are rejected
     interest_rate: float = 0
@@ -24,7 +28,7 @@ class AccountCreate(BaseModel):
 
 
 class AccountUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     type: Optional[str] = None  # always rejected — type is immutable
     balance: Optional[StrictInt] = None
     interest_rate: Optional[float] = None
@@ -38,7 +42,7 @@ class AccountUpdate(BaseModel):
 class AccountPayRequest(BaseModel):
     amount: StrictInt  # integer cents; floats are rejected
     source_account_id: int
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=MAX_TEXT)
 
 
 @router.get("")

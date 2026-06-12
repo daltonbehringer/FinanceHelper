@@ -34,12 +34,68 @@ uvicorn exits.
    - `LITESTREAM_REPLICA_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`
    - `LITESTREAM_ACCESS_KEY_ID=<key>`
    - `LITESTREAM_SECRET_ACCESS_KEY=<secret>`
+   - `LITESTREAM_AGE_RECIPIENT=age1...` (public key — see Encryption)
+   - `LITESTREAM_AGE_IDENTITY=AGE-SECRET-KEY-1...` (secret key — see Encryption)
+
+## Encryption (age) — Phase 4
+
+The replica is **client-side encrypted with [age](https://age-encryption.org)**
+before upload (configured in [`litestream.yml`](../litestream.yml)). R2, and
+anyone with bucket read access, only ever sees ciphertext. This is the chosen
+at-rest posture for the backup; the live DB relies on Railway's volume
+encryption. (SQLCipher / field-level encryption was considered and rejected for
+the current single-user, self-reported-data threat model — see
+`PHASE4-FINDINGS.md`.)
+
+**Generate the keypair (owner, one-time):**
+
+```
+age-keygen -o age-identity.txt
+# Public key  -> LITESTREAM_AGE_RECIPIENT   (age1...)
+# Whole file  -> LITESTREAM_AGE_IDENTITY    (AGE-SECRET-KEY-1...)
+```
+
+> **Store the identity OUTSIDE everything it protects** (a password manager).
+> If you lose it, the encrypted replica is unrecoverable. If it leaks, the
+> backup confidentiality is gone — rotate by re-replicating under a new key.
+
+**Cut over an existing UNENCRYPTED replica to encrypted:**
+
+1. Set `LITESTREAM_AGE_RECIPIENT` / `LITESTREAM_AGE_IDENTITY` in Railway and
+   redeploy. Litestream starts a **new generation** that is encrypted.
+2. Confirm the new generation is healthy: `litestream generations -config litestream.yml ${DB_PATH}`.
+3. **Purge the old plaintext generation(s)** so no unencrypted copy lingers:
+   delete the prior generation directories under `finance.db/generations/` in
+   the R2 bucket (keep only the post-cutover generation), or, if the bucket
+   holds nothing else, empty it and let the encrypted generation re-establish.
 
 ## Disaster recovery (restore from R2)
+
+With `LITESTREAM_AGE_IDENTITY` present in the environment, restore is unchanged —
+Litestream decrypts transparently:
 
 ```
 litestream restore -config litestream.yml -o /data/finance.db /data/finance.db
 ```
+
+Without the identity, restore **fails** (ciphertext only). This is the point.
+
+## Restore drill (owner, after cutover)
+
+Prove the encrypted replica is actually recoverable — do this once after the
+cutover and any time the key changes:
+
+```
+export LITESTREAM_AGE_IDENTITY=AGE-SECRET-KEY-1...   # + the R2 + bucket env vars
+litestream restore -config litestream.yml -o /tmp/drill.db /data/finance.db
+sqlite3 /tmp/drill.db "PRAGMA integrity_check;"        # expect: ok
+sqlite3 /tmp/drill.db "SELECT count(*) FROM users; SELECT count(*) FROM accounts;"  # expect: > 0
+```
+
+Record the date + result in `PHASE4-FINDINGS.md`. This same check runs monthly
+in CI — see [`.github/workflows/backup-verify.yml`](../.github/workflows/backup-verify.yml),
+which uses a **read-only, bucket-scoped** R2 token plus the age identity (both
+GitHub repo secrets) and fails (notifying via GitHub) on any error.
 
 ## Local verification (executed 2026-06-10, Litestream v0.3.13)
 

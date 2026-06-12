@@ -43,6 +43,10 @@ async def list_events(
     if not all:
         # Owner's History visibility rule: balance-affecting + create/delete.
         where.append("(amount_delta IS NOT NULL OR action IN ('create', 'delete'))")
+        # Auth/audit rows (entity_type='user': first-login create, per-session
+        # login) are never default-visible — they carry no amount_delta but a
+        # 'user' create would otherwise pass the rule above. `all=true` shows them.
+        where.append("entity_type != 'user'")
     if entity_type:
         where.append("entity_type = ?")
         params.append(entity_type)

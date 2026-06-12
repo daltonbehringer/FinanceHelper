@@ -1,4 +1,5 @@
-# Litestream configuration — streams the SQLite DB to Cloudflare R2.
+# Litestream configuration — streams the SQLite DB to Cloudflare R2,
+# client-side encrypted with age (Phase 4, WS1).
 #
 # Env vars (set on Railway — see docs/litestream.md):
 #   DB_PATH                       canonical DB location (prod: /data/finance.db)
@@ -6,8 +7,13 @@
 #   LITESTREAM_REPLICA_ENDPOINT   https://<account-id>.r2.cloudflarestorage.com
 #   LITESTREAM_ACCESS_KEY_ID      R2 access key id
 #   LITESTREAM_SECRET_ACCESS_KEY  R2 secret access key
+#   LITESTREAM_AGE_RECIPIENT      age public key (age1...) — encrypts the replica
+#   LITESTREAM_AGE_IDENTITY       age secret key (AGE-SECRET-KEY-1...) — decrypts on restore
 #
-# Litestream expands ${...} from the environment when it reads this file.
+# Litestream expands ${...} from the environment when it reads this file. The
+# replica is encrypted at the client before upload: R2 (and anyone with bucket
+# read access) only ever sees ciphertext. The identity is required to restore —
+# store it OUTSIDE everything it protects (a password manager), never in R2.
 
 dbs:
   - path: ${DB_PATH}
@@ -20,3 +26,8 @@ dbs:
         force-path-style: true
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        age:
+          identities:
+            - ${LITESTREAM_AGE_IDENTITY}
+          recipients:
+            - ${LITESTREAM_AGE_RECIPIENT}

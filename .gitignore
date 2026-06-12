@@ -20,3 +20,5 @@ tests/evals/artifacts/
 PHASE3A-FINDINGS.md
 PHASE3B-FINDINGS.md
 PHASE3C-FINDINGS.md
+PHASE4-FINDINGS.md
+.security/age-identity.txt

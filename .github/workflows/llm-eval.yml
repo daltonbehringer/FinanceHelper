@@ -1,0 +1,35 @@
+name: llm-eval
+
+# Weekly run of the LLM routing/safety eval suite (tests/evals/) against the
+# real Anthropic API. Phase 4, WS4. Weekly (not nightly) for spend control —
+# tighten the cron later if desired. Requires the ANTHROPIC_API_KEY repo secret
+# (owner-provisioned). Manual runs allowed via workflow_dispatch.
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # 08:00 UTC every Monday
+  workflow_dispatch:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — API key present
+        run: ': "${ANTHROPIC_API_KEY:?missing ANTHROPIC_API_KEY repo secret}"'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run LLM eval suite
+        # -m llm_eval overrides the default "-m 'not llm_eval'" (last -m wins).
+        run: pytest -m llm_eval -v

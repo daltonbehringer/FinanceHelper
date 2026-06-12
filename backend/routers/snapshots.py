@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, StrictInt
+from pydantic import BaseModel, Field, StrictInt
 
 from backend.auth import get_current_user
 from backend.db import fetchall
@@ -15,7 +15,7 @@ class SnapshotCreate(BaseModel):
     account_id: int
     balance: StrictInt  # integer cents; floats are rejected
     payment_made: Optional[StrictInt] = None
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=200)  # bounded free-text (Phase 4, WS4)
     # Provenance is no longer client-supplied (Phase 2): this endpoint serves the
     # manual UI only and is always "user". LLM-originated writes go server-side
     # through backend/services with source="llm" set by backend/routers/ai.py.

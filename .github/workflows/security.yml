@@ -1,0 +1,76 @@
+name: security
+
+# Phase 4, WS3: secrets + dependency gates. Runs on every push/PR and weekly.
+#   * gitleaks    — secret scan across FULL git history
+#   * pip-audit   — Python deps, fail on any vuln (allowlist file for accepted IDs)
+#   * npm-audit   — frontend deps, fail on high/critical (allowlist via .nsprc)
+#   * bundle-scan — build the SPA and assert no secret patterns ship to clients
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — gitleaks detect scans git log
+      - name: Install gitleaks
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | sudo tar -C /usr/local/bin -xz gitleaks
+          gitleaks version
+      - name: Scan full history
+        run: gitleaks detect --source . --redact --no-banner --exit-code 1
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip pip-audit
+      - name: Audit Python deps
+        run: |
+          IGNORES=$(grep -vE '^\s*#|^\s*$' .security/pip-audit-allowlist.txt 2>/dev/null \
+            | sed 's/^/--ignore-vuln /' | tr '\n' ' ')
+          echo "ignoring: ${IGNORES:-<none>}"
+          pip-audit -r requirements.txt --strict $IGNORES
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - name: Audit npm deps (high+critical; allowlist in .nsprc)
+        run: npx --yes better-npm-audit audit --level high
+
+  bundle-scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+      - name: Assert no secrets in client bundle
+        run: |
+          if grep -rIEn 'sk-ant-api[0-9]|secret-test-[A-Za-z0-9]|STYTCH_SECRET|AKIA[0-9A-Z]{16}|AGE-SECRET-KEY-1|-----BEGIN [A-Z ]*PRIVATE KEY' dist/; then
+            echo "::error::secret pattern found in client bundle"; exit 1
+          fi
+          echo "bundle clean"

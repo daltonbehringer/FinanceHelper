@@ -1,0 +1,10 @@
+# pip-audit allowlist — accepted / false-positive advisory IDs (one per line).
+# The security.yml `pip-audit` job passes each as `--ignore-vuln <ID>`.
+# Keep this meaningful: every entry needs a dated justification in the PR that
+# adds it (and ideally a tracking note in PHASE4-FINDINGS.md).
+#
+# As of 2026-06-12: pip-audit on requirements.txt reports 0 vulnerabilities,
+# so this allowlist is intentionally empty.
+#
+# Example:
+#   GHSA-xxxx-xxxx-xxxx   # accepted 2026-06-12: dev-only, not reachable in prod

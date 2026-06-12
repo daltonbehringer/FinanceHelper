@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, StrictInt
+from pydantic import BaseModel, Field, StrictInt
 
 from backend.auth import get_current_user
 from backend.db import fetchall
@@ -10,20 +10,23 @@ from backend.services._core import EventContext
 
 router = APIRouter(prefix="/api/expenses", tags=["expenses"])
 
+# Bounded free-text that flows into LLM context (Phase 4, WS4).
+MAX_TEXT = 200
+
 
 class ExpenseCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=MAX_TEXT)
     amount: StrictInt  # integer cents; floats are rejected
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     due_day: Optional[int] = None  # 1-28, optional for subscriptions
     is_recurring: bool = True
     due_date: Optional[str] = None  # ISO date for one-time expenses
 
 
 class ExpenseUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     amount: Optional[StrictInt] = None
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     due_day: Optional[int] = None
     is_recurring: Optional[bool] = None
     due_date: Optional[str] = None
@@ -80,7 +83,7 @@ async def deactivate_expense(expense_id: int, user_id: int = Depends(get_current
 class ExpensePayRequest(BaseModel):
     source_account_id: Optional[int] = None
     source_new_balance: Optional[StrictInt] = None  # integer cents
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     # Provenance is no longer client-supplied (Phase 2): this endpoint serves the
     # manual UI only and is always "user". The LLM path pays expenses server-side
     # through backend/services with source="llm".
