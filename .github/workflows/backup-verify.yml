@@ -23,7 +23,7 @@ jobs:
       LITESTREAM_AGE_IDENTITY: ${{ secrets.LITESTREAM_AGE_IDENTITY }}
       LITESTREAM_AGE_RECIPIENT: ${{ secrets.LITESTREAM_AGE_RECIPIENT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Guard — required secrets present
         run: |
