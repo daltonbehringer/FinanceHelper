@@ -68,6 +68,15 @@ def update_account(user_id: int, account_id: int, updates: dict, ctx: EventConte
 
             validate_account_fields(old["type"], updates)
 
+            # Reads prefer the latest snapshot over accounts.balance. Record an
+            # edited balance there before updating the fallback, so the event's
+            # delta also uses the original balance for accounts without snapshots.
+            if "balance" in updates and updates["balance"] != _current_balance(conn, account_id):
+                create_snapshot_tx(
+                    conn, user_id, account_id=account_id,
+                    balance=updates["balance"], ctx=ctx,
+                )
+
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             conn.execute(
                 f"UPDATE accounts SET {set_clause} WHERE id = ? AND user_id = ?",
@@ -76,7 +85,9 @@ def update_account(user_id: int, account_id: int, updates: dict, ctx: EventConte
             updated = dict(conn.execute(
                 "SELECT * FROM accounts WHERE id = ?", (account_id,)
             ).fetchone())
-            changes = diff_changes(old, updates)
+            # The snapshot event owns the balance change; this event describes
+            # only metadata edits, grouped under the same correlation_id.
+            changes = diff_changes(old, {k: v for k, v in updates.items() if k != "balance"})
             if changes:
                 log_event(
                     conn, user_id=user_id, entity_type="account", entity_id=account_id,
