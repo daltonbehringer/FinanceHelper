@@ -1,4 +1,5 @@
 .env
+.DS_Store
 __pycache__/
 *.pyc
 finance.db
@@ -8,6 +9,10 @@ CLAUDE.md
 tasks/lessons.md
 frontend/node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
 .claude/*
 # Commit test source (needed for CI) but ignore DB artifacts the tests create.
 tests/__pycache__/

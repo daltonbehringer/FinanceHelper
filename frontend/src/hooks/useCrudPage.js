@@ -129,6 +129,7 @@ export function useCrudPage({
     showAddForm, toggleAdd, startAdd,
     editItem, openEdit, closeEdit,
     addForm, setAddForm, editForm, setEditForm,
+    handleAdd, handleEdit,
     addLoading, editLoading,
     sortCol, sortDir, handleSort, setSort,
     pendingDeactivate, requestDeactivate: setPendingDeactivate,

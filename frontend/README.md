@@ -1,5 +1,18 @@
 # React + Vite
 
+## Browser regression tests
+
+Run from `frontend/`:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+The tests start Vite on port 3101 and cover account, expense, and income saves.
+API responses are mocked; no backend, credentials, or Claude API calls are needed.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
