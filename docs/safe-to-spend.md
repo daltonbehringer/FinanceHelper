@@ -9,6 +9,7 @@ advisor use the same inputs and calculation. No LLM arithmetic is involved.
 selected checking cash
 - unpaid account payments due through payday
 - unpaid expenses due through payday
+- early holds for large payments due in the following pay period (optional)
 - estimated living costs until payday
 - cash cushion
 = projected cash above the floor
@@ -50,8 +51,36 @@ The expandable dashboard breakdown shows each deduction and dated obligation.
 - `cash_cushion` is a separate nonnegative fixed reserve, default zero. It is not a
   monthly expense. The advisor's payment previews recompute the plan after the cash
   deduction and release the paid obligation, avoiding double subtraction.
-- Bills after payday are excluded. This figure does not guarantee later pay periods
-  are funded. Longer-term planning uses the monthly forecast separately.
+- Bills after payday are excluded except for the optional early holds below. This
+  figure does not guarantee later pay periods are funded. Longer-term planning uses
+  the monthly forecast separately.
+
+## Large payment holds
+
+Settings' **Large payment threshold** (`large_payment_threshold`, integer cents)
+defaults to zero, which disables early holds. With a positive threshold, expenses
+and required account payments **strictly above** it reserve half one pay period
+early. The threshold compares the scheduled payment, not the account balance.
+
+- Due through the next payday, including overdue: reserve the full unpaid amount.
+- Due after the next payday and through the following distinct payday: reserve
+  half, rounded up to a cent. Partial account payments already made count toward
+  that half; reserve `max(0, ceil(required / 2) - already_paid)`.
+- Due later: no hold yet. The earliest positive income across active schedules
+  defines each boundary, including weekly, biweekly, and semimonthly schedules.
+
+For example, with checks on the 1st and 15th, $1,500 rent due on the 28th and a
+$1,000 threshold, the period after receiving the 1st's check reserves $750.
+After receiving the 15th's check, it reserves $1,500 **total**, not $2,250.
+Recording payment releases that occurrence; recurring bills advance to their next
+unpaid date. Record paycheck receipts to move past a payday that is today.
+
+This is a reservation of existing checking cash, not a transfer or a ledger that
+accumulates savings. It does not assume the next paycheck has arrived. The dashboard
+shows early holds separately (`held_back`); each bill's `reserved` is its actual
+deduction, and `amount` is its full unpaid amount. Advisor projections use the same
+holds. Projected monthly surplus remains unchanged because the monthly obligation
+itself has not changed.
 
 ## Pay schedules and monthly forecast
 

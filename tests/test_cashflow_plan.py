@@ -128,7 +128,8 @@ def test_migration_preserves_legacy_values_and_is_idempotent(temp_db, user_a):
     expense = make_expense(user_a, due_day=15, last_paid_date='2026-05-10')
     make_settings(user_a, min_checking=60000)
     additions = {'accounts': ['payment_remaining'], 'recurring_expenses': ['next_due_date', 'linked_account_id'],
-                 'recurring_income': ['second_income_day'], 'user_settings': ['cash_cushion', 'living_budget_configured']}
+                 'recurring_income': ['second_income_day'],
+                 'user_settings': ['cash_cushion', 'living_budget_configured', 'large_payment_threshold']}
     conn = get_db()
     with conn:
         for table, columns in additions.items():
@@ -141,6 +142,7 @@ def test_migration_preserves_legacy_values_and_is_idempotent(temp_db, user_a):
     settings = fetchone('SELECT * FROM user_settings WHERE user_id = ?', (user_a,))
     assert settings['min_checking'] == 60000 and settings['living_budget_configured'] == 1
     assert settings['cash_cushion'] == 0
+    assert settings['large_payment_threshold'] == 0
     init_db()
     assert dict(fetchone('SELECT * FROM recurring_expenses WHERE id = ?', (expense,))) == first
     assert fetchone('SELECT balance FROM accounts WHERE id = ?', (account,))['balance'] == 100000
@@ -191,3 +193,45 @@ def test_old_income_calendar_constraint_migrates_without_data_loss(temp_db, user
     assert saved['last_pay_date'] == '2026-01-31'
     init_db()
     assert fetchone('SELECT income_day FROM recurring_income WHERE id = ?', (income,))['income_day'] == 31
+
+
+def test_threshold_persists_affects_dashboard_and_advisor_but_not_monthly(client, user_a, frozen_day):
+    from backend.routers.ai import _safe_to_spend_block, _resolve
+    cash, _, _ = setup_plan(client, user_a)
+    rent = client.post('/api/expenses', json={'name': 'Rent', 'amount': 150000, 'due_day': 1,
+                                            'next_due_date': '2026-07-01'}).json()
+    before = client.get('/api/budget/spending-money').json()
+    saved = client.put('/api/settings', json={'large_payment_threshold': 100000})
+    assert saved.status_code == 200
+    assert saved.json()['large_payment_threshold'] == 100000
+    assert fetchone('SELECT large_payment_threshold FROM user_settings WHERE user_id = ?', (user_a,))[0] == 100000
+    assert client.get('/api/settings').json()['large_payment_threshold'] == 100000
+    plan = client.get('/api/dashboard/safe-to-spend').json()
+    assert plan['held_back'] == 75000
+    assert plan['available'] == 27000
+    assert 'Held back for large payments next period: $750.00' in _safe_to_spend_block(user_a)
+    assert client.get('/api/budget/spending-money').json() == before
+    preview, _, error = _resolve(user_a, 'pay_expense', {'expense_id': rent['id']})
+    assert error is None
+    assert preview['safe_to_spend_after']['held_back'] == 0
+    response = client.post(f"/api/expenses/{rent['id']}/pay", json={
+        'source_account_id': cash, 'source_new_balance': preview['source']['new_balance'],
+    })
+    assert response.status_code == 200
+    after = client.get('/api/dashboard/safe-to-spend').json()
+    assert after['held_back'] == 0
+    assert after['projected_balance'] == preview['safe_to_spend_after']['projected_balance']
+    assert client.put('/api/settings', json={'large_payment_threshold': 0}).status_code == 200
+    assert client.get('/api/settings').json()['large_payment_threshold'] == 0
+
+
+def test_threshold_create_validation_and_user_isolation(client, user_a, user_b):
+    assert client.get('/api/settings').json()['large_payment_threshold'] == 0
+    assert client.put('/api/settings', json={'large_payment_threshold': 100000}).status_code == 200
+    assert fetchone('SELECT large_payment_threshold FROM user_settings WHERE user_id = ?', (user_a,))[0] == 100000
+    assert fetchone('SELECT * FROM user_settings WHERE user_id = ?', (user_b,)) is None
+    for invalid in (-1, 100.5, '10000', True):
+        assert client.put('/api/settings', json={'large_payment_threshold': invalid}).status_code == 422
+    # Unrelated updates retain the threshold.
+    client.put('/api/settings', json={'cash_cushion': 100})
+    assert client.get('/api/settings').json()['large_payment_threshold'] == 100000

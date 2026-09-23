@@ -17,6 +17,7 @@ def update_settings(
     *,
     min_checking: int | None = None,
     cash_cushion: int | None = None,
+    large_payment_threshold: int | None = None,
     default_payment_account_id: int | None = None,
     advice_posture: str | None = None,
     zip_code: str | None = None,
@@ -28,8 +29,8 @@ def update_settings(
     if advice_posture is not None and advice_posture not in VALID_POSTURES:
         raise HTTPException(status_code=422, detail=f"Invalid advice_posture: {advice_posture}")
 
-    if any(v is not None and v < 0 for v in (min_checking, cash_cushion)):
-        raise HTTPException(status_code=422, detail="Budget and cushion cannot be negative")
+    if any(v is not None and v < 0 for v in (min_checking, cash_cushion, large_payment_threshold)):
+        raise HTTPException(status_code=422, detail="Budget, cushion, and payment threshold cannot be negative")
 
     ctx = with_correlation(ctx)
     now = utc_now_iso()
@@ -54,6 +55,8 @@ def update_settings(
                     updates["living_budget_configured"] = 1
                 if cash_cushion is not None:
                     updates["cash_cushion"] = cash_cushion
+                if large_payment_threshold is not None:
+                    updates["large_payment_threshold"] = large_payment_threshold
                 if default_payment_account_id is not None:
                     updates["default_payment_account_id"] = (
                         default_payment_account_id if default_payment_account_id > 0 else None
@@ -90,12 +93,14 @@ def update_settings(
                     """
                     INSERT INTO user_settings (user_id, min_checking, default_payment_account_id,
                                                payment_account_configured, advice_posture,
-                                               zip_code, household_size, updated_at, cash_cushion, living_budget_configured)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                               zip_code, household_size, updated_at, cash_cushion, living_budget_configured,
+                                               large_payment_threshold)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (user_id, min_checking or 0, default_id, configured,
                      advice_posture or "default", zip_code or None,
-                     household_size or None, now, cash_cushion or 0, int(min_checking is not None)),
+                     household_size or None, now, cash_cushion or 0, int(min_checking is not None),
+                     large_payment_threshold or 0),
                 )
                 row = conn.execute(
                     "SELECT * FROM user_settings WHERE id = ?", (cur.lastrowid,)

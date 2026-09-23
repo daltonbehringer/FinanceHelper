@@ -353,6 +353,7 @@ def _migrate_cashflow(conn):
         "recurring_income": {"second_income_day": "INTEGER"},
         "user_settings": {
             "cash_cushion": "INTEGER NOT NULL DEFAULT 0",
+            "large_payment_threshold": "INTEGER NOT NULL DEFAULT 0",
             "living_budget_configured": "INTEGER NOT NULL DEFAULT 0",
         },
     }

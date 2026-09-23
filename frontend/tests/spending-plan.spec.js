@@ -53,14 +53,36 @@ for (const [state, summary] of [
   })
 }
 
-test('settings saves living costs separately from the cash cushion', async ({ page }) => {
+test('settings saves living costs, cushion, and the large payment threshold', async ({ page }) => {
   const writes = await mockApi(page)
   await page.goto('/settings')
   await page.getByLabel('Fallback monthly living costs').fill('900')
   await page.getByLabel('Minimum cash cushion').fill('100')
+  await page.getByLabel('Large payment threshold').fill('1000')
   await page.getByRole('button', { name: 'Save Settings' }).click()
   await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
-  expect(writes.find((w) => w.path === '/api/settings').body).toMatchObject({ min_checking: 90000, cash_cushion: 10000 })
+  expect(writes.find((w) => w.path === '/api/settings').body).toMatchObject({ min_checking: 90000, cash_cushion: 10000, large_payment_threshold: 100000 })
+  await page.reload()
+  await expect(page.getByLabel('Large payment threshold')).toHaveValue('1000')
+  await page.getByLabel('Large payment threshold').fill('0')
+  await page.getByRole('button', { name: 'Save Settings' }).click()
+  await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
+  expect(writes.filter((w) => w.path === '/api/settings').at(-1).body.large_payment_threshold).toBe(0)
+})
+
+test('dashboard distinguishes early holds from full unpaid bills', async ({ page }) => {
+  await mockApi(page, {
+    ...complete, held_back: 75000, available: 27000,
+    bills: [...complete.bills, { kind: 'expense', id: 3, name: 'Rent', due: '2026-07-01',
+      amount: 150000, reserved: 75000, reserve_stage: 'half', overdue: false }],
+  })
+  await page.goto('/')
+  await page.locator('summary').click()
+  await expect(page.getByText('− Held back for large payments', { exact: true })).toBeVisible()
+  const rent = page.getByRole('listitem').filter({ hasText: 'Rent' })
+  await expect(rent).toContainText('Early hold toward $1,500.00 unpaid')
+  await expect(rent).toContainText('$750.00')
+  await expect(page.getByText('$270.00', { exact: true }).first()).toBeVisible()
 })
 
 test('semimonthly income collects two calendar pay days', async ({ page }) => {

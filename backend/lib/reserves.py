@@ -2,7 +2,7 @@
 
 Obligations are reserved in full through payday (debits may precede payroll).
 Living costs cover [today, payday), or today alone if payroll is due today.
-The incoming paycheck and bills after that boundary are never included.
+The incoming paycheck is excluded. Large payments can be half reserved one period early.
 """
 import calendar
 from datetime import date, timedelta
@@ -74,6 +74,9 @@ def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_li
     cash, label = select_checking(accounts, settings)
     payday = next_payday_info(income, today)
     end = parse_date(payday["date"]) if payday else None
+    threshold = max(0, settings.get("large_payment_threshold") or 0)
+    following_payday = next_payday_info(income, end + timedelta(days=1)) if end and threshold else None
+    horizon = parse_date(following_payday["date"]) if following_payday else end
     monthly, budget_source = living_budget(settings, budget_lines)
     cushion = max(0, settings.get("cash_cushion") or 0)
     issues, bills = [], []
@@ -90,9 +93,19 @@ def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_li
         ):
             issues.append(f"Complete the pay schedule for {inc['name']}.")
 
-    def add_bill(kind, item, due, amount):
+    def add_bill(kind, item, due, amount, required):
+        early = due > end
+        if early and (not threshold or required <= threshold):
+            return
+        # Payments already made count toward the first half, rather than halving
+        # the remaining amount again. Round an odd cent up conservatively.
+        paid = max(0, required - amount)
+        reserved = max(0, (required + 1) // 2 - paid) if early else amount
+        if not reserved:
+            return
         bills.append({"kind": kind, "id": item["id"], "name": item["name"],
-                      "due": due.isoformat(), "amount": amount, "overdue": due < today})
+                      "due": due.isoformat(), "amount": amount, "overdue": due < today,
+                      "reserved": reserved, "reserve_stage": "half" if early else "due"})
 
     debt_accounts = {a["id"]: a for a in accounts if a["type"] in DEBT_TYPES}
     for account in debt_accounts.values():
@@ -108,11 +121,11 @@ def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_li
             continue  # An explicitly recorded zero payment.
         remaining = account.get("payment_remaining")
         amount = required if remaining is None else max(0, remaining)
-        while end and due <= end:
+        while horizon and due <= horizon:
             # Reserve the configured installment, which can include interest;
             # principal balance alone cannot cap future required payments.
             if amount:
-                add_bill("account", account, due, amount)
+                add_bill("account", account, due, amount, required)
             due = advance_month(due)
             amount = required
 
@@ -128,18 +141,19 @@ def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_li
         if not due:
             issues.append(f"Set the next unpaid due date for {expense['name']}.")
             continue
-        while end and due <= end:
-            add_bill("expense", expense, due, expense["amount"])
+        while horizon and due <= horizon:
+            add_bill("expense", expense, due, expense["amount"], expense["amount"])
             if not expense.get("is_recurring", 1):
                 break
             due = advance_month(due)
 
     bills.sort(key=lambda b: (b["due"], b["name"]))
-    account_total = sum(b["amount"] for b in bills if b["kind"] == "account")
-    expense_total = sum(b["amount"] for b in bills if b["kind"] == "expense")
+    account_total = sum(b["reserved"] for b in bills if b["kind"] == "account" and b["reserve_stage"] == "due")
+    expense_total = sum(b["reserved"] for b in bills if b["kind"] == "expense" and b["reserve_stage"] == "due")
+    held_back = sum(b["reserved"] for b in bills if b["reserve_stage"] == "half")
     living = prorated_living_cost(monthly, today, end) if monthly is not None and end else None
     complete = not issues
-    projected = cash - account_total - expense_total - living - cushion if complete else None
+    projected = cash - account_total - expense_total - held_back - living - cushion if complete else None
     return {
         "as_of": today.isoformat(), "complete": complete, "issues": issues,
         "available": max(0, projected) if complete else None,
@@ -151,7 +165,8 @@ def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_li
         "next_payday": payday, "account_payments": account_total, "expense_payments": expense_total,
         "living_costs": living, "monthly_living_budget": monthly, "budget_source": budget_source,
         "cash_cushion": cushion, "bills": bills,
-        "reserved_total": account_total + expense_total,
+        "large_payment_threshold": threshold, "held_back": held_back,
+        "reserved_total": account_total + expense_total + held_back,
     }
 
 

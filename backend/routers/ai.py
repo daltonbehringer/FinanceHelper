@@ -250,13 +250,15 @@ def _safe_to_spend_block(user_id: int) -> str:
         f"  Checking: {_fmt_cents(summary['checking_balance'])} ({summary['checking_label']})\n"
         f"  Required account payments: {_fmt_cents(summary['account_payments'])}\n"
         f"  Unpaid expenses: {_fmt_cents(summary['expense_payments'])}\n"
+        f"  Held back for large payments next period: {_fmt_cents(summary['held_back'])}\n"
         f"  Estimated living costs until payday: {_fmt_cents(summary['living_costs'])}\n"
         f"  Cash cushion: {_fmt_cents(summary['cash_cushion'])}\n"
         f"  Free for optional spending, savings, or EXTRA debt payments: {_fmt_cents(summary['available'])}\n"
         f"  Shortfall against obligations and cushion: {_fmt_cents(summary['shortfall'])}\n"
-        f"  Obligations: {json.dumps(_dollars_view(summary['bills'], ('amount',)))}\n"
+        f"  Obligations (reserved is the actual deduction): {json.dumps(_dollars_view(summary['bills'], ('amount', 'reserved')))}\n"
         "Required payments above are already reserved; do not subtract them twice. "
-        "Bills after payday need separate longer-term planning; they are not deducted here."
+        "Large payments above the configured threshold are half reserved one pay period early. "
+        "That hold is already deducted; do not subtract it again. Other bills after payday are excluded."
     )
 
 

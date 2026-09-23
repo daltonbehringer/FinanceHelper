@@ -131,3 +131,63 @@ def test_payment_projection_releases_paid_obligation_without_double_subtraction(
 def test_installments_are_not_capped_by_principal_balance():
     result = summary(accounts=[CASH, {**CARD, 'type': 'loan', 'current_balance': 20000}], expenses=[])
     assert result['account_payments'] == 30000  # Required installments may include interest.
+
+
+@pytest.mark.parametrize('today,last_paid,held,due_total', [
+    ('2026-06-01', '2026-06-01', 75000, 0),
+    ('2026-06-14', '2026-06-01', 75000, 0),
+    ('2026-06-15', '2026-06-15', 0, 150000),
+    ('2026-06-29', '2026-06-15', 0, 150000),
+])
+def test_rent_reserves_half_then_full_without_stacking(today, last_paid, held, due_total):
+    rent = {**BILL, 'amount': 150000, 'next_due_date': '2026-06-28'}
+    pay = {**PAY, 'frequency': 'semimonthly', 'income_day': 1, 'second_income_day': 15,
+           'last_pay_date': last_paid}
+    result = safe_to_spend_summary([CASH], {**SETTINGS, 'min_checking': 0, 'large_payment_threshold': 100000},
+                                  [rent], [pay], date.fromisoformat(today))
+    assert result['held_back'] == held
+    assert result['expense_payments'] == due_total
+    assert result['reserved_total'] == held + due_total
+    assert result['available'] == 200000 - held - due_total
+
+
+@pytest.mark.parametrize('threshold,amount,expected', [
+    (0, 150000, 0), (150000, 150000, 0), (150001, 150000, 0),
+    (100000, 150000, 75000), (100000, 150001, 75001),
+])
+def test_threshold_is_optional_strictly_above_and_rounds_half_up(threshold, amount, expected):
+    result = summary(accounts=[CASH], settings={**SETTINGS, 'large_payment_threshold': threshold},
+                     expenses=[{**BILL, 'amount': amount, 'next_due_date': '2026-07-01'}])
+    assert result['held_back'] == expected
+    assert result['expense_payments'] == 0
+
+
+def test_early_holds_stop_at_following_payday_and_include_its_due_bills():
+    settings = {**SETTINGS, 'large_payment_threshold': 10000}
+    for due, held, full in [('2026-06-20', 0, 50000), ('2026-07-04', 25000, 0), ('2026-07-05', 0, 0)]:
+        result = summary(accounts=[CASH], settings=settings, expenses=[{**BILL, 'next_due_date': due}])
+        assert (result['held_back'], result['expense_payments']) == (held, full)
+    # A weekly secondary income ends the next period sooner; same-day jobs do not.
+    secondary = {**PAY, 'id': 2, 'frequency': 'weekly', 'last_pay_date': '2026-06-06'}
+    assert summary(accounts=[CASH], settings=settings, income=[PAY, secondary],
+                   expenses=[{**BILL, 'next_due_date': '2026-06-21'}])['held_back'] == 0
+
+
+@pytest.mark.parametrize('remaining,expected', [(30000, 15000), (20000, 5000), (15000, 0), (10000, 0)])
+def test_partial_debt_payments_count_toward_first_half(remaining, expected):
+    result = summary(accounts=[CASH, {**CARD, 'due_date': '2026-07-01', 'payment_remaining': remaining}],
+                     settings={**SETTINGS, 'large_payment_threshold': 10000},
+                     expenses=[{**BILL, 'linked_account_id': CARD['id']}])
+    assert result['held_back'] == expected
+    assert result['account_payments'] == result['expense_payments'] == 0
+
+
+def test_paid_one_time_and_recurring_expenses_release_early_hold():
+    settings = {**SETTINGS, 'large_payment_threshold': 10000}
+    for recurring in (0, 1):
+        expense = {**BILL, 'is_recurring': recurring, 'next_due_date': '2026-07-01', 'due_date': '2026-07-01'}
+        before = summary(accounts=[CASH], settings=settings, expenses=[expense])
+        assert before['held_back'] == 25000
+        accounts, expenses = project_payment([CASH], [expense], {'expense_id': BILL['id']}, TODAY)
+        after = summary(accounts=accounts, settings=settings, expenses=expenses)
+        assert after['held_back'] == 0

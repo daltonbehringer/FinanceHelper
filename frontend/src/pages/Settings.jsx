@@ -18,6 +18,7 @@ export default function Settings() {
   const { showToast } = useToast()
   const [minChecking, setMinChecking] = useState('')
   const [cashCushion, setCashCushion] = useState('')
+  const [largePaymentThreshold, setLargePaymentThreshold] = useState('')
   const [defaultPaymentAccountId, setDefaultPaymentAccountId] = useState('')
   const [advicePosture, setAdvicePosture] = useState('default')
   const [zipCode, setZipCode] = useState('')
@@ -30,6 +31,7 @@ export default function Settings() {
   useEffect(() => {
     if (!loading) {
       setCashCushion(centsToDollarInput(settings.cash_cushion ?? 0))
+      setLargePaymentThreshold(centsToDollarInput(settings.large_payment_threshold ?? 0))
       setMinChecking(settings.living_budget_configured || settings.min_checking > 0 ? centsToDollarInput(settings.min_checking ?? 0) : '')
       setDefaultPaymentAccountId(
         settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
@@ -38,15 +40,16 @@ export default function Settings() {
       setZipCode(settings.zip_code || '')
       setHouseholdSize(settings.household_size != null ? String(settings.household_size) : '')
     }
-  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size, settings.cash_cushion, settings.living_budget_configured])
+  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size, settings.cash_cushion, settings.living_budget_configured, settings.large_payment_threshold])
 
   async function handleSave(e) {
     e.preventDefault()
     setSaveError('')
     const value = dollarsToCents(minChecking) ?? 0
     const cushion = dollarsToCents(cashCushion) ?? 0
-    if (value < 0 || cushion < 0) {
-      showToast('Budget and cushion cannot be negative', 'error')
+    const threshold = dollarsToCents(largePaymentThreshold) ?? 0
+    if (value < 0 || cushion < 0 || threshold < 0) {
+      showToast('Budget, cushion, and payment threshold cannot be negative', 'error')
       return
     }
     const paymentId = defaultPaymentAccountId ? Number(defaultPaymentAccountId) : 0
@@ -57,6 +60,7 @@ export default function Settings() {
         body: JSON.stringify({
           ...(minChecking !== '' ? { min_checking: value } : {}),
           cash_cushion: cushion,
+          large_payment_threshold: threshold,
           default_payment_account_id: paymentId,
           advice_posture: advicePosture,
           zip_code: zipCode.trim(),
@@ -184,6 +188,28 @@ export default function Settings() {
             />
             <p id="cash-cushion-help" className="mt-2 text-sm text-text-muted text-pretty">
               Money to leave untouched after payments and living costs. Set zero to use a $0 floor.
+            </p>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <h2 className="text-base font-semibold text-text">Hold back for large payments</h2>
+          </CardHeader>
+          <CardBody>
+            <Input
+              label="Large payment threshold"
+              type="number" min="0" step="0.01"
+              value={largePaymentThreshold}
+              onChange={(e) => setLargePaymentThreshold(e.target.value)}
+              className="sm:max-w-xs"
+              aria-describedby="large-payment-help"
+            />
+            <p id="large-payment-help" className="mt-2 text-sm text-text-muted text-pretty">
+              Set zero to turn this off. For expenses and required account payments above this amount,
+              safe to spend holds back half one pay period early, then the full unpaid amount
+              in the due period. For $1,500 rent, that means $750 held back first, then $1,500 total
+              until paid. This reserves checking cash; it does not move money or change your monthly surplus.
             </p>
           </CardBody>
         </Card>

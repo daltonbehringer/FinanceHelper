@@ -21,24 +21,28 @@ export default function SpendingBreakdown({ summary, loading }) {
             <p className="text-text-muted text-pretty">
               {summary.checking_label ? `Cash from ${summary.checking_label}. ` : ''}
               Payments due on payday are included because they may leave before payroll arrives.
-              The incoming paycheck and bills due later are excluded. Living costs are estimated
+              The incoming paycheck is excluded. Large payments can be half reserved one pay period
+              early using your Settings threshold; other later bills are excluded. Living costs are estimated
               from your monthly budget over the remaining days.
             </p>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 tnum">
               <dt>Checking cash</dt><dd className="text-right">{formatMoney(summary.checking_balance)}</dd>
               <dt>− Required account payments</dt><dd className="text-right">{formatMoney(summary.account_payments)}</dd>
               <dt>− Unpaid expenses</dt><dd className="text-right">{formatMoney(summary.expense_payments)}</dd>
+              <dt>− Held back for large payments</dt><dd className="text-right">{formatMoney(summary.held_back ?? 0)}</dd>
               <dt>− Living costs until payday</dt><dd className="text-right">{formatMoney(summary.living_costs)}</dd>
               <dt>− Cash cushion</dt><dd className="text-right">{formatMoney(summary.cash_cushion)}</dd>
               <dt className="font-semibold">Free to spend or save</dt><dd className="text-right font-semibold">{formatMoney(summary.available)}</dd>
             </dl>
-            {summary.shortfall > 0 && <p className="text-debit">{formatMoney(summary.shortfall)} short of covering payments, living costs, and your cushion.</p>}
+            {summary.shortfall > 0 && <p className="text-debit">{formatMoney(summary.shortfall)} short of covering payments, early holds, living costs, and your cushion.</p>}
             {summary.bills.length > 0 && (
               <ul className="divide-y divide-border">
                 {summary.bills.map((bill) => (
                   <li key={`${bill.kind}-${bill.id}-${bill.due}`} className="flex justify-between gap-4 py-2">
-                    <span>{bill.name} <span className="text-text-muted">· {formatDate(bill.due)}{bill.overdue ? ' · Overdue' : ''}</span></span>
-                    <span className="tnum">{formatMoney(bill.amount)}</span>
+                    <span>{bill.name} <span className="text-text-muted">· {formatDate(bill.due)}{bill.overdue ? ' · Overdue' : ''}
+                      {bill.reserve_stage === 'half' ? ` · Early hold toward ${formatMoney(bill.amount)} unpaid` : ''}
+                    </span></span>
+                    <span className="tnum">{formatMoney(bill.reserved ?? bill.amount)}</span>
                   </li>
                 ))}
               </ul>

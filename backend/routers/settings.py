@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 class SettingsUpdate(BaseModel):
     min_checking: Optional[StrictInt] = None  # integer cents; floats are rejected
     cash_cushion: Optional[StrictInt] = None
+    large_payment_threshold: Optional[StrictInt] = None
     default_payment_account_id: Optional[int] = None
     advice_posture: Optional[str] = None
     zip_code: Optional[str] = None
@@ -30,7 +31,7 @@ async def get_settings(user_id: int = Depends(get_current_user)):
             (user_id,),
         )
         default_id = checking[0]["id"] if len(checking) == 1 else None
-        return {"min_checking": 0, "default_payment_account_id": default_id}
+        return {"min_checking": 0, "large_payment_threshold": 0, "default_payment_account_id": default_id}
 
     result = dict(row)
     if not result.get("payment_account_configured"):
@@ -52,6 +53,7 @@ async def update_settings(body: SettingsUpdate, user_id: int = Depends(get_curre
         user_id,
         min_checking=body.min_checking,
         cash_cushion=body.cash_cushion,
+        large_payment_threshold=body.large_payment_threshold,
         default_payment_account_id=body.default_payment_account_id,
         advice_posture=body.advice_posture,
         zip_code=body.zip_code,
