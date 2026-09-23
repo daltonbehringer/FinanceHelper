@@ -91,7 +91,7 @@ test('dashboard distinguishes early holds from full unpaid bills', async ({ page
   await page.goto('/')
   await page.locator('summary').click()
   await expect(page.getByText('− Held back for large payments', { exact: true })).toBeVisible()
-  const rent = page.getByRole('listitem').filter({ hasText: 'Rent' })
+  const rent = page.locator('details').getByRole('listitem').filter({ hasText: 'Rent' })
   await expect(rent).toContainText('Early hold toward $1,500.00 unpaid')
   await expect(rent).toContainText('$750.00')
   await expect(page.getByText('$270.00', { exact: true }).first()).toBeVisible()

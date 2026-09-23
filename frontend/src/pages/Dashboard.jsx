@@ -1,195 +1,489 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useAccounts } from '../hooks/useAccounts'
-import { useExpenses } from '../hooks/useExpenses'
-import { useIncome } from '../hooks/useIncome'
-import { useNetWorth } from '../hooks/useNetWorth'
 import { useSafeToSpend } from '../hooks/useSafeToSpend'
 import { useSpendingMoney } from '../hooks/useSpendingMoney'
-import { useToast } from '../context/ToastContext'
 import { useAdvisorChatContext } from '../context/AdvisorChatContext'
-import { apiStream } from '../lib/api'
-import {
-  formatMoney,
-  formatDate,
-  isDebt,
-} from '../lib/utils'
-import StatCard from '../components/ui/StatCard'
-import Card, { CardHeader, CardBody } from '../components/ui/Card'
-import Button from '../components/ui/Button'
-import Spinner from '../components/ui/Spinner'
-import Markdown from '../components/ui/Markdown'
-import AdvisorChat from '../components/dashboard/AdvisorChat'
-import NetWorthHero from '../components/dashboard/NetWorthHero'
+import { formatMoney, formatDate, isDebt } from '../lib/utils'
 import SpendingBreakdown from '../components/dashboard/SpendingBreakdown'
-import AccountsSnapshot from '../components/dashboard/AccountsSnapshot'
+import '../styles/dashboard.css'
 
-const RECOMMEND_PROMPT = 'What should I prioritize this month?'
+function Arrow({ diagonal = false }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <path
+        d={diagonal ? 'M6 18 18 6M6 6h12v12' : 'M4 12h15m-6-6 6 6-6 6'}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
-function resolvedBalance(a) {
-  return a.current_balance ?? a.balance ?? 0
+function CalendarDate({ value }) {
+  if (!value)
+    return (
+      <span className="overview-date-tile" aria-hidden="true">
+        —
+      </span>
+    )
+  const date = new Date(`${value}T12:00:00`)
+  return (
+    <span className="overview-date-tile" aria-hidden="true">
+      <span>{date.toLocaleDateString('en-US', { month: 'short' })}</span>
+      <strong>{date.getDate()}</strong>
+    </span>
+  )
+}
+
+function CashAllocation({ plan, loading }) {
+  const ready = !loading && plan?.complete
+  const parts = ready
+    ? [
+        { label: 'Free to spend', amount: plan.available, color: 'free' },
+        {
+          label: 'Bills due',
+          amount: plan.account_payments + plan.expense_payments,
+          color: 'bills',
+        },
+        { label: 'Living costs', amount: plan.living_costs, color: 'living' },
+        { label: 'Early holds', amount: plan.held_back ?? 0, color: 'holds' },
+        { label: 'Cash cushion', amount: plan.cash_cushion, color: 'cushion' },
+      ]
+    : []
+  // In a shortfall, show obligations as a share of the amount needed, not as
+  // percentages of cash that would exceed 100% or imply all bills are funded.
+  const total = parts.reduce((sum, part) => sum + part.amount, 0)
+  return (
+    <section
+      className="overview-panel overview-allocation"
+      aria-labelledby="allocation-heading"
+    >
+      <div className="overview-section-head">
+        <div>
+          <p className="overview-kicker">THE PLAN FOR YOUR CASH</p>
+          <h2 id="allocation-heading">A place for every dollar.</h2>
+        </div>
+        <div className="overview-checking">
+          <span>Checking cash</span>
+          <strong>{loading ? '—' : formatMoney(plan?.checking_balance)}</strong>
+        </div>
+      </div>
+      {ready ? (
+        <>
+          <div className="overview-allocation-bar" aria-hidden="true">
+            {parts
+              .filter((part) => part.amount > 0)
+              .map((part) => (
+                <span
+                  key={part.color}
+                  className={`allocation-${part.color}`}
+                  style={{ width: `${(part.amount / total) * 100}%` }}
+                />
+              ))}
+          </div>
+          <dl className="overview-allocation-legend">
+            {parts.map((part) => (
+              <div key={part.color}>
+                <dt>
+                  <i
+                    aria-hidden="true"
+                    className={`allocation-${part.color}`}
+                  />
+                  {part.label}
+                </dt>
+                <dd>{formatMoney(part.amount)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="overview-caption">
+            {plan.shortfall > 0
+              ? `Your plan needs ${formatMoney(plan.shortfall)} more than your checking cash. The bar shows the total needed.`
+              : 'Bills, living costs, holds, and cushion are reserved. Your next paycheck is excluded.'}
+          </p>
+        </>
+      ) : (
+        <p className="overview-muted">
+          {loading
+            ? 'Calculating your cash plan…'
+            : plan
+              ? 'Complete your cash plan below to see what is available and what is reserved.'
+              : 'Your cash plan is unavailable. Refresh the page to try again.'}
+        </p>
+      )}
+      <SpendingBreakdown summary={plan} loading={loading} />
+    </section>
+  )
+}
+
+function UpcomingPayments({ plan, loading }) {
+  const bills = [...(plan?.bills || [])].sort(
+    (a, b) => a.due.localeCompare(b.due) || a.name.localeCompare(b.name)
+  )
+  return (
+    <section
+      className="overview-panel overview-upcoming"
+      aria-labelledby="upcoming-heading"
+    >
+      <div className="overview-section-head">
+        <div>
+          <p className="overview-kicker">PAYMENTS & EARLY HOLDS</p>
+          <h2 id="upcoming-heading">Coming up.</h2>
+        </div>
+        <Link
+          to="/expenses"
+          className="overview-icon-link"
+          aria-label="View all expenses"
+        >
+          <Arrow diagonal />
+        </Link>
+      </div>
+      {loading ? (
+        <p role="status" className="overview-empty">
+          Loading upcoming payments…
+        </p>
+      ) : !plan ? (
+        <p className="overview-empty">Upcoming payments could not be loaded.</p>
+      ) : bills.length ? (
+        <>
+          <ul className="overview-bills">
+            {bills.slice(0, 4).map((bill) => (
+              <li key={`${bill.kind}-${bill.id}-${bill.due}`}>
+                <Link to={bill.kind === 'account' ? '/accounts' : '/expenses'}>
+                  <CalendarDate value={bill.due} />
+                  <div className="overview-bill-name">
+                    <strong>{bill.name}</strong>
+                    <span className={bill.overdue ? 'overview-danger' : ''}>
+                      {bill.overdue ? 'Overdue · ' : ''}
+                      {bill.reserve_stage === 'half'
+                        ? 'Early hold'
+                        : 'Payment due'}
+                      <span className="sr-only"> · {formatDate(bill.due)}</span>
+                    </span>
+                  </div>
+                  <div className="overview-bill-money">
+                    <strong>{formatMoney(bill.reserved ?? bill.amount)}</strong>
+                    {bill.reserve_stage === 'half' && (
+                      <span>of {formatMoney(bill.amount)} unpaid</span>
+                    )}
+                  </div>
+                  <Arrow diagonal />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="overview-caption">
+            {bills.length > 4
+              ? `Showing the next 4 of ${bills.length} reserved payments. All are included in your cash plan.`
+              : 'These amounts are included in your cash plan above.'}
+          </p>
+        </>
+      ) : (
+        <div className="overview-empty">
+          <span className="overview-empty-mark" aria-hidden="true">
+            ✓
+          </span>
+          <p>
+            {plan.complete
+              ? 'No payments reserved this period.'
+              : 'No scheduled payments to show yet.'}
+          </p>
+          <Link to="/expenses" className="overview-text-link">
+            {plan.complete ? 'Review your expenses' : 'Add your expenses'}{' '}
+            <Arrow />
+          </Link>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BalanceSheet({ accounts, loading }) {
+  const sum = (items) =>
+    items.reduce(
+      (total, account) =>
+        total + (account.current_balance ?? account.balance ?? 0),
+      0
+    )
+  const assets = sum(accounts.filter((account) => !isDebt(account.type)))
+  const debt = sum(accounts.filter((account) => isDebt(account.type)))
+  const hasAccounts = accounts.length > 0
+  return (
+    <section
+      className="overview-panel overview-balance"
+      aria-labelledby="balance-heading"
+    >
+      <div className="overview-section-head">
+        <div>
+          <p className="overview-kicker">THE BIGGER PICTURE</p>
+          <h2 id="balance-heading">Balance sheet.</h2>
+        </div>
+        <Link
+          to="/accounts"
+          className="overview-icon-link"
+          aria-label="View all accounts"
+        >
+          <Arrow diagonal />
+        </Link>
+      </div>
+      <p className="overview-muted">Net worth</p>
+      <p
+        className={`overview-net-worth ${assets - debt < 0 ? 'overview-danger' : ''}`}
+      >
+        {loading || !hasAccounts ? '—' : formatMoney(assets - debt)}
+      </p>
+      <dl className="overview-balance-rows">
+        <div>
+          <dt>Total assets</dt>
+          <dd>{loading || !hasAccounts ? '—' : formatMoney(assets)}</dd>
+        </div>
+        <div>
+          <dt>Total debt</dt>
+          <dd>{loading || !hasAccounts ? '—' : formatMoney(debt)}</dd>
+        </div>
+      </dl>
+      <div className="overview-balance-foot">
+        <span>
+          {loading
+            ? 'Loading balances…'
+            : hasAccounts
+              ? `${accounts.length} active account${accounts.length === 1 ? '' : 's'} · latest recorded balances`
+              : 'Add accounts to see your financial position.'}
+        </span>
+        <Link
+          to={hasAccounts ? '/history' : '/accounts'}
+          className="overview-text-link"
+        >
+          {hasAccounts ? 'View history' : 'Add an account'} <Arrow />
+        </Link>
+      </div>
+    </section>
+  )
 }
 
 export default function Dashboard() {
-  const { accounts, loading: accountsLoading, refetch: refetchAccounts } = useAccounts()
-  const { loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
-  const { loading: incomeLoading, refetch: refetchIncome } = useIncome()
-  const { series: netWorthSeries, loading: netWorthLoading } = useNetWorth()
-  const { summary: safeToSpend, loading: safeToSpendLoading, refetch: refetchSafeToSpend } = useSafeToSpend()
-  const { summary: spendingMoney, refetch: refetchSpendingMoney } = useSpendingMoney()
-  const { showToast } = useToast()
-  const { registerRefresh } = useAdvisorChatContext()
-
-  // Keep the dashboard's data fresh after an advisor write, even one made from
-  // the shared chat widget here.
+  const {
+    accounts,
+    loading: accountsLoading,
+    refetch: refetchAccounts,
+  } = useAccounts()
+  const {
+    summary: plan,
+    loading: planLoading,
+    refetch: refetchPlan,
+  } = useSafeToSpend()
+  const {
+    summary: monthly,
+    loading: monthlyLoading,
+    refetch: refetchMonthly,
+  } = useSpendingMoney()
+  const { registerRefresh, pending } = useAdvisorChatContext()
   useEffect(
-    () => registerRefresh(() => {
-      refetchAccounts(); refetchExpenses(); refetchIncome(); refetchSafeToSpend(); refetchSpendingMoney()
-    }),
-    [registerRefresh, refetchAccounts, refetchExpenses, refetchIncome, refetchSafeToSpend, refetchSpendingMoney],
+    () =>
+      registerRefresh(() => {
+        refetchAccounts()
+        refetchPlan()
+        refetchMonthly()
+      }),
+    [registerRefresh, refetchAccounts, refetchPlan, refetchMonthly]
   )
 
-  const [recommendation, setRecommendation] = useState(null)
-  const [recLoading, setRecLoading] = useState(false)
-
-  const loading = accountsLoading || expensesLoading || incomeLoading
-
-  // Cash planning and pay dates come from the shared backend calculation.
-  const stats = useMemo(() => {
-    const debtAccounts = accounts.filter((a) => isDebt(a.type))
-    const totalDebt = debtAccounts.reduce((s, a) => s + resolvedBalance(a), 0)
-
-    return { totalDebt }
-  }, [accounts])
-
-  // Recommendation: folded into the chat endpoint (Phase 2). The canned
-  // monthly-plan prompt streams back markdown text; no tool/confirmation.
-  async function handleGetRecommendation() {
-    setRecLoading(true)
-    setRecommendation(null)
-    let acc = ''
-    let failed = false
-    await apiStream('/api/ai/chat', { messages: [{ role: 'user', content: RECOMMEND_PROMPT }] }, {
-      onText: (delta) => { acc += delta; setRecommendation(acc) },
-      onError: () => { failed = true },
-    })
-    if (failed && !acc) showToast('Failed to get recommendation', 'error')
-    setRecLoading(false)
-  }
-
-  function handleSavePdf() {
-    if (!recommendation) return
-    const win = window.open('', '_blank')
-    if (!win) {
-      showToast('Could not open print window. Check your popup blocker.', 'error')
-      return
-    }
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Financial Recommendation</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; color: #111; line-height: 1.6; }
-          @media (min-width: 640px) { body { padding: 40px; } }
-          h1 { font-size: 20px; margin-bottom: 24px; }
-          pre { white-space: pre-wrap; font-family: inherit; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <h1>Financial Recommendation</h1>
-        <pre>${recommendation.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-      </body>
-      </html>
-    `)
-    win.document.close()
-    win.print()
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Spinner size="lg" className="text-accent" />
-      </div>
-    )
-  }
+  const ready = !planLoading && plan?.complete
+  const shortfall = ready && plan.shortfall > 0
+  const payday = !planLoading ? plan?.next_payday : null
+  const asOf = plan?.as_of || new Date().toLocaleDateString('en-CA')
+  const days = payday
+    ? Math.max(
+        0,
+        Math.round(
+          (Date.parse(`${payday.date}T00:00:00Z`) -
+            Date.parse(`${asOf}T00:00:00Z`)) /
+            86400000
+        )
+      )
+    : null
+  const state = planLoading
+    ? 'Calculating'
+    : !plan
+      ? 'Unable to load'
+      : !ready
+        ? 'Needs a little setup'
+        : shortfall
+          ? 'Needs attention'
+          : 'Your plan is covered'
 
   return (
-    <div className="space-y-6">
-      {/* Hero: net-worth chart */}
-      <NetWorthHero series={netWorthSeries} loading={netWorthLoading} />
+    <div className="overview">
+      <header className="overview-header">
+        <div>
+          <p className="overview-kicker">YOUR FINANCIAL SNAPSHOT</p>
+          <h1>The overview.</h1>
+        </div>
+        <div className="overview-header-actions">
+          <span className="overview-asof">As of {formatDate(asOf)}</span>
+          <Link to="/accounts" className="overview-button">
+            Update balances <Arrow diagonal />
+          </Link>
+        </div>
+      </header>
 
-      {/* Stat tiles — 5-up on desktop (Phase 3c: added Spending money), 2-up on mobile */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard
-          label="Next payday"
-          value={safeToSpend?.next_payday ? formatDate(safeToSpend.next_payday.date) : '—'}
-          subtitle={safeToSpend?.next_payday ? `${formatMoney(safeToSpend.next_payday.amount)} expected` : 'Set an income schedule'}
-        />
-        <StatCard
-          label="Safe to spend"
-          value={safeToSpend?.available != null ? formatMoney(safeToSpend.available) : '—'}
-          valueColor={safeToSpend?.shortfall > 0 ? 'text-debit' : 'text-credit'}
-          subtitle={safeToSpendLoading ? 'Calculating…' : !safeToSpend?.complete ? 'Estimate incomplete — see details below'
-            : safeToSpend.shortfall > 0 ? `${formatMoney(safeToSpend.shortfall)} short before ${formatDate(safeToSpend.next_payday.date)}`
-            : `free through ${formatDate(safeToSpend.next_payday.date)}`}
+      <div className="overview-top-grid">
+        <section
+          className={`overview-hero ${shortfall ? 'overview-hero-warning' : ''}`}
+          aria-labelledby="safe-heading"
+          aria-busy={planLoading}
+        >
+          <div className="overview-hero-top">
+            <span className="overview-kicker">YOUR MONEY, RIGHT NOW</span>
+            <span className="overview-status">
+              <i aria-hidden="true" />
+              {state}
+            </span>
+          </div>
+          <div className="overview-hero-value">
+            <h2 id="safe-heading">Safe to spend</h2>
+            <p>{ready ? formatMoney(plan.available) : '—'}</p>
+          </div>
+          <p className="overview-hero-description">
+            {planLoading
+              ? 'Putting your cash plan together…'
+              : !plan
+                ? 'We couldn’t load your estimate. Try refreshing the page.'
+                : !ready
+                  ? 'Estimate incomplete — see details below'
+                  : shortfall
+                    ? `${formatMoney(plan.shortfall)} short before ${formatDate(payday.date)}`
+                    : 'Available after bills, living costs, and reserves.'}
+          </p>
+          <div className="overview-hero-foot">
+            <span>
+              {planLoading
+                ? 'Loading…'
+                : !plan
+                  ? 'Unavailable'
+                  : payday
+                    ? `Through ${formatDate(payday.date)}`
+                    : 'Plan around your next paycheck'}
+            </span>
+            <a href="#cash-plan" className="overview-text-link">
+              See your cash plan <Arrow />
+            </a>
+          </div>
+        </section>
 
-        />
-        <StatCard
-          label="Projected monthly surplus"
-          value={spendingMoney?.has_budget ? formatMoney(spendingMoney.spending_money) : '—'}
-          valueColor={(spendingMoney?.spending_money ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
-          subtitle={spendingMoney?.issues?.length ? 'Required payments incomplete' : spendingMoney?.has_budget ? 'average after bills, debt & living costs' : 'set a budget in Settings'}
-        />
-        <StatCard
-          label="Total debt"
-          value={formatMoney(stats.totalDebt)}
-          valueColor="text-debit"
-        />
-        <StatCard
-          label="Monthly cash flow"
-          value={formatMoney(spendingMoney?.monthly_cash_flow)}
-          valueColor={(spendingMoney?.monthly_cash_flow ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
-          subtitle="income − recurring expenses"
-        />
-      </div>
-
-      <SpendingBreakdown summary={safeToSpend} loading={safeToSpendLoading} />
-
-      {/* Accounts snapshot — grouped Debts / Assets */}
-      <AccountsSnapshot accounts={accounts} />
-
-      {/* Monthly recommendation (streamed; entry point preserved from Phase 2) */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-text">Monthly recommendation</h2>
-            <div className="flex gap-2">
-              {recommendation && (
-                <Button variant="outline" size="sm" onClick={handleSavePdf}>
-                  Save as PDF
-                </Button>
+        <aside
+          className="overview-panel overview-outlook"
+          aria-label="Income outlook"
+        >
+          <div className="overview-payday">
+            <div className="overview-section-head">
+              <h2>Next payday</h2>
+              <Link
+                to="/income"
+                className="overview-icon-link"
+                aria-label="Edit income schedule"
+              >
+                <Arrow diagonal />
+              </Link>
+            </div>
+            <p className="overview-paydate">
+              {payday
+                ? new Date(`${payday.date}T12:00:00`).toLocaleDateString(
+                    'en-US',
+                    { month: 'long', day: 'numeric' }
+                  )
+                : 'Not scheduled'}
+            </p>
+            <div className="overview-payday-detail">
+              <span>
+                {planLoading
+                  ? 'Checking your schedule…'
+                  : !plan
+                    ? 'Refresh to try again'
+                    : payday
+                      ? `${formatMoney(payday.amount)} expected`
+                      : 'Add your income schedule'}
+              </span>
+              {days !== null && (
+                <span className="overview-days">
+                  {days === 0
+                    ? 'Today'
+                    : `In ${days} day${days === 1 ? '' : 's'}`}
+                </span>
               )}
-              <Button size="sm" onClick={handleGetRecommendation} loading={recLoading}>
-                {recommendation ? 'Refresh' : 'Generate'}
-              </Button>
             </div>
           </div>
-        </CardHeader>
-        {(recLoading || recommendation) && (
-          <CardBody>
-            {recLoading && !recommendation ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="text-accent" />
-              </div>
-            ) : (
-              <Markdown>{recommendation}</Markdown>
-            )}
-          </CardBody>
-        )}
-      </Card>
+          <div className="overview-monthly">
+            <p>Projected monthly surplus</p>
+            <strong
+              className={monthly?.spending_money < 0 ? 'overview-danger' : ''}
+            >
+              {!monthlyLoading && monthly?.has_budget
+                ? formatMoney(monthly.spending_money)
+                : '—'}
+            </strong>
+            <span>
+              {monthlyLoading
+                ? 'Loading forecast…'
+                : monthly?.issues?.length
+                  ? 'Complete required payment details'
+                  : monthly?.has_budget
+                    ? 'Average after bills, debt & living costs'
+                    : 'Set your living-cost budget in Settings'}
+            </span>
+          </div>
+        </aside>
+      </div>
 
-      {/* Advisor Chat — compact widget: latest response only; full thread lives on the Chat page */}
-      <AdvisorChat variant="compact" />
+      <div id="cash-plan">
+        <CashAllocation plan={plan} loading={planLoading} />
+      </div>
+      <div className="overview-bottom-grid">
+        <UpcomingPayments plan={plan} loading={planLoading} />
+        <BalanceSheet accounts={accounts} loading={accountsLoading} />
+      </div>
+
+      <Link to="/chat" className="overview-advisor">
+        <span className="overview-advisor-symbol" aria-hidden="true">
+          <svg
+            viewBox="0 0 32 32"
+            width="28"
+            height="28"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.25"
+          >
+            <path d="M16 3c0 8-5 13-13 13 8 0 13 5 13 13 0-8 5-13 13-13C21 16 16 11 16 3Z" />
+          </svg>
+        </span>
+        <span className="overview-advisor-copy">
+          <strong>
+            {pending
+              ? 'A payment or update needs your confirmation.'
+              : 'Make your next move with a little clarity.'}
+          </strong>
+          <span>
+            {pending
+              ? 'Review the details with your advisor before applying it.'
+              : 'Ask a question, record a payment, or plan what comes next.'}
+          </span>
+        </span>
+        <span className="overview-advisor-action">
+          {pending ? 'Review in Chat' : 'Open advisor'} <Arrow />
+        </span>
+      </Link>
+      <p className="overview-footnote">
+        A snapshot of what you’ve recorded. Keep balances and payments current
+        for an accurate picture.
+      </p>
     </div>
   )
 }
