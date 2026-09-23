@@ -58,17 +58,35 @@ The expandable dashboard breakdown shows each deduction and dated obligation.
 ## Settings and currency entry
 
 Settings groups the single monthly estimate and optional categories under **Living
-costs**. The monthly total identifies which source is in use. Categories replace
-the single estimate; the saved estimate remains available if all categories are
-removed. **Cash reserves** contains the separate cash cushion and large-payment
-threshold. Payment-account and advisor preferences explain their effects separately.
+costs**. Categories replace the single estimate; the saved estimate remains
+available if all categories are removed. **Cash planning** contains the payment
+account, separate cash cushion, and large-payment threshold. **Advisor priority**
+explains the recommendations each option encourages without changing cash math.
 
-Category edits save on blur or Enter; additions, removals, and area estimates save
-immediately. Other fields use **Save Settings**. All Settings money inputs display
-a dollar prefix and two decimal places after editing, accept pasted dollar amounts,
-and reject negative values or more than two decimal places. API/storage values
-remain integer cents. Local-estimate suggestions must be reviewed for overlap with
-tracked bills.
+Each section has explicit **Save** and **Discard** controls. Category additions,
+edits, and removals affect only the draft until **Save living costs**. The draft
+monthly total is separate from the sidebar's saved rules. The living-cost save
+(`PUT /api/budget/plan`) commits the category list and any single estimate in one
+transaction, with audit events; a stale category snapshot is rejected to avoid
+overwriting changes from another tab. Other sections send only their own fields
+through the existing settings endpoint. Blank household size explicitly clears
+that value; omitted fields are unchanged.
+
+`POST /api/budget/estimate` returns suggestions only and never saves categories.
+The preview uses the saved ZIP and household size, shows suggested and existing
+draft amounts, and protects user-edited categories. **Use selected in draft**
+adds selected suggestions to the draft; **Save living costs** makes them active.
+Accepting an estimate makes it user-owned. Review suggestions for overlap with
+tracked bills; they are AI estimates, not verified local prices. Invalid,
+negative, nonnumeric, nonfinite, or unsupported amounts are rejected before use.
+
+Settings cannot be edited if settings, categories, or payment accounts fail to
+load; an explicit retry restores the saved configuration. Save errors preserve
+the draft and leave the saved summary unchanged. All money inputs display a
+dollar prefix and two decimal places after editing, accept pasted dollar amounts,
+and reject negatives or more than two decimal places. API/storage values remain
+integer cents. Unsaved drafts are labelled; reloading or closing the page prompts
+before discarding them.
 
 ## Large payment holds
 

@@ -18,7 +18,7 @@ class SettingsUpdate(BaseModel):
     default_payment_account_id: Optional[int] = None
     advice_posture: Optional[str] = None
     zip_code: Optional[str] = None
-    household_size: Optional[int] = None
+    household_size: Optional[StrictInt] = None
 
 
 @router.get("")
@@ -51,13 +51,7 @@ async def get_settings(user_id: int = Depends(get_current_user)):
 async def update_settings(body: SettingsUpdate, user_id: int = Depends(get_current_user)):
     settings_service.update_settings(
         user_id,
-        min_checking=body.min_checking,
-        cash_cushion=body.cash_cushion,
-        large_payment_threshold=body.large_payment_threshold,
-        default_payment_account_id=body.default_payment_account_id,
-        advice_posture=body.advice_posture,
-        zip_code=body.zip_code,
-        household_size=body.household_size,
+        **body.model_dump(exclude_unset=True),
         ctx=EventContext(source="user"),
     )
     # Return the updated settings (reuse GET logic for auto-detect)

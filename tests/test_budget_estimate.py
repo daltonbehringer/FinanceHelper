@@ -1,6 +1,6 @@
 """Phase 3c — POST /api/budget/estimate with the Anthropic call MOCKED.
 
-Valid JSON → llm_estimate lines written (dollars parsed to cents). Malformed
+Valid JSON → preview only (dollars parsed to cents). Malformed
 JSON → 502 and ZERO writes. No real API call ever happens in CI.
 """
 
@@ -43,7 +43,7 @@ def stub_anthropic(monkeypatch):
     return _set
 
 
-def test_estimate_valid_json_writes_lines(client, user_a, stub_anthropic):
+def test_estimate_valid_json_previews_without_writes(client, user_a, stub_anthropic):
     stub_anthropic(
         '{"groceries": 450, "transportation": 180, "utilities": 220, '
         '"dining_entertainment": 150, "personal": 100}'
@@ -54,6 +54,7 @@ def test_estimate_valid_json_writes_lines(client, user_a, stub_anthropic):
     assert by_cat["groceries"]["amount"] == 45000  # $450 -> cents
     assert by_cat["groceries"]["origin"] == "llm_estimate"
     assert by_cat["personal"]["amount"] == 10000
+    assert fetchall("SELECT * FROM budget_lines WHERE user_id = ?", (user_a,)) == []
 
 
 def test_estimate_json_with_prose_fence_is_extracted(client, user_a, stub_anthropic):
@@ -83,5 +84,29 @@ def test_estimate_does_not_overwrite_user_line(client, user_a, stub_anthropic):
     resp = client.post("/api/budget/estimate", json={"zip_code": "94110"})
     assert resp.status_code == 200
     by_cat = {l["category"]: l for l in resp.json()}
-    assert by_cat["groceries"]["amount"] == 99999  # protected
+    assert by_cat["groceries"]["amount"] == 45000  # a suggestion, not an applied change
+    saved = client.get("/api/budget/lines").json()
+    assert len(saved) == 1
+    assert saved[0]["amount"] == 99999  # existing user amount remains protected
     assert by_cat["transportation"]["amount"] == 18000
+
+
+@pytest.mark.parametrize("amount", ["-1", "true", '"400"', "null", "NaN", "Infinity", "1e999", "90071992547410"])
+def test_invalid_estimates_do_not_write(client, user_a, stub_anthropic, amount):
+    stub_anthropic('{"groceries": ' + amount + '}')
+    response = client.post('/api/budget/estimate', json={'zip_code': '94110'})
+    assert response.status_code == 502
+    assert client.get('/api/budget/lines').json() == []
+
+
+@pytest.mark.parametrize("body", [
+    {'zip_code': 'bad'}, {'zip_code': '1234'},
+    {'zip_code': '94110', 'household_size': 0},
+    {'zip_code': '94110', 'household_size': -1},
+    {'zip_code': '94110', 'household_size': 1.5},
+    {'zip_code': '94110', 'household_size': True},
+])
+def test_invalid_estimate_location_is_rejected(client, user_a, stub_anthropic, body):
+    stub_anthropic('{"groceries": 450}')
+    assert client.post('/api/budget/estimate', json=body).status_code == 422
+    assert client.get('/api/budget/lines').json() == []

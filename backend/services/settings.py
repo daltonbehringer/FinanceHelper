@@ -3,8 +3,12 @@
 from fastapi import HTTPException
 
 from backend.db import get_db
+from backend.lib.settings_validation import validate_location, validate_money
+
 from backend.lib.dates import utc_now_iso
 from backend.services._core import EventContext, diff_changes, log_event, with_correlation
+
+_UNSET = object()
 
 # Advice postures the LLM advisor can adopt. "default" = the model chooses.
 VALID_POSTURES = {
@@ -21,16 +25,25 @@ def update_settings(
     default_payment_account_id: int | None = None,
     advice_posture: str | None = None,
     zip_code: str | None = None,
-    household_size: int | None = None,
+    household_size: int | None | object = _UNSET,
     ctx: EventContext,
 ) -> dict:
     """Upsert user settings. `default_payment_account_id=0` means "explicitly
-    no default" — stored as NULL but marked configured (existing contract)."""
+    no default" — stored as NULL but marked configured (existing contract).
+    An omitted household_size leaves it unchanged; explicit None clears it.
+    """
     if advice_posture is not None and advice_posture not in VALID_POSTURES:
         raise HTTPException(status_code=422, detail=f"Invalid advice_posture: {advice_posture}")
 
     if any(v is not None and v < 0 for v in (min_checking, cash_cushion, large_payment_threshold)):
         raise HTTPException(status_code=422, detail="Budget, cushion, and payment threshold cannot be negative")
+
+    for value in (min_checking, cash_cushion, large_payment_threshold):
+        if value is not None:
+            validate_money(value)
+    if zip_code is not None:
+        zip_code = zip_code.strip()
+    validate_location(zip_code, None if household_size is _UNSET else household_size)
 
     ctx = with_correlation(ctx)
     now = utc_now_iso()
@@ -66,8 +79,8 @@ def update_settings(
                     updates["advice_posture"] = advice_posture
                 if zip_code is not None:
                     updates["zip_code"] = zip_code or None
-                if household_size is not None:
-                    updates["household_size"] = household_size or None
+                if household_size is not _UNSET:
+                    updates["household_size"] = household_size
                 if updates:
                     set_clause = ", ".join(f"{k} = ?" for k in updates)
                     conn.execute(
@@ -99,7 +112,7 @@ def update_settings(
                     """,
                     (user_id, min_checking or 0, default_id, configured,
                      advice_posture or "default", zip_code or None,
-                     household_size or None, now, cash_cushion or 0, int(min_checking is not None),
+                     (None if household_size is _UNSET else household_size), now, cash_cushion or 0, int(min_checking is not None),
                      large_payment_threshold or 0),
                 )
                 row = conn.execute(

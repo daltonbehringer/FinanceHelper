@@ -1,15 +1,15 @@
-"""Budget-line CRUD, the one-shot LLM estimate seeder, and the deterministic
+"""Budget-line CRUD, the read-only LLM estimate preview, and the deterministic
 spending-money read.
 
 `GET /api/budget/spending-money` serves the same number the advisor cites,
 computed by the shared `spending_money_summary` (backend/lib/budget.py).
 `POST /api/budget/estimate` makes ONE Anthropic call for metro-level monthly
-averages and seeds editable `llm_estimate` lines — never overwriting lines the
-user has taken ownership of. Every write is scoped to the authed user.
+averages without changing saved categories. Every write is scoped to the authed user.
 """
 
 import json
 import os
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 import anthropic
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, StrictInt
 
 from backend.auth import get_current_user
+from backend.lib.settings_validation import MAX_CENTS, validate_location
 from backend.rate_limit import limiter
 from backend.routers.ai import MODEL
 from backend.services.financial_data import (
@@ -49,7 +50,7 @@ class BudgetLineUpdate(BaseModel):
 class EstimateRequest(BaseModel):
     # Optional overrides; fall back to saved user_settings when omitted.
     zip_code: Optional[str] = None
-    household_size: Optional[int] = None
+    household_size: Optional[StrictInt] = None
 
 
 @router.get("/lines")
@@ -115,11 +116,16 @@ def _parse_estimate(text: str) -> dict:
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start == -1 or end == -1 or end < start:
         raise ValueError("No JSON object in estimate response")
-    data = json.loads(cleaned[start : end + 1])  # may raise ValueError
+    data = json.loads(cleaned[start : end + 1], parse_float=Decimal, parse_int=Decimal)
+    if not isinstance(data, dict):
+        raise ValueError("Estimate must be an object")
     estimates = {}
     for cat in ESTIMATE_CATEGORIES:
         if cat in data:
-            estimates[cat] = round(float(data[cat]) * 100)  # dollars -> cents
+            amount = data[cat]
+            if not isinstance(amount, Decimal) or not amount.is_finite() or amount < 0 or amount > Decimal(MAX_CENTS) / 100:
+                raise ValueError("Estimate amounts must be finite nonnegative numbers")
+            estimates[cat] = int((amount * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     if not estimates:
         raise ValueError("Estimate response had none of the expected categories")
     return estimates
@@ -130,15 +136,18 @@ def _parse_estimate(text: str) -> dict:
 async def estimate(
     request: Request, body: EstimateRequest, user_id: int = Depends(get_current_user)
 ):
-    """One-shot LLM seed of budget lines from zip + household size. Mockable: tests
+    """Read-only LLM preview from zip + household size. Mockable: tests
     monkeypatch `backend.routers.budget.anthropic.Anthropic`."""
     from backend.db import fetchone
 
+    validate_location(body.zip_code, body.household_size)
     settings = fetchone("SELECT zip_code, household_size FROM user_settings WHERE user_id = ?", (user_id,))
     zip_code = body.zip_code or (settings["zip_code"] if settings else None)
     household_size = body.household_size or (settings["household_size"] if settings else None)
     if not zip_code:
         raise HTTPException(status_code=422, detail="A ZIP code is required to estimate")
+
+    validate_location(zip_code, household_size)
 
     expense_names = [e["name"] for e in _get_expenses_for_user(user_id)]
     prompt = _build_estimate_prompt(zip_code, household_size, expense_names)
@@ -159,7 +168,26 @@ async def estimate(
         # Malformed model output — no writes, surface a 502.
         raise HTTPException(status_code=502, detail="Could not parse the estimate. Please try again.")
 
-    lines = budget_service.upsert_estimate_lines(
-        user_id, estimates, EventContext(source="llm", source_detail="budget_estimate")
+    # Suggestions are never active until the user explicitly saves their draft.
+    return [{"category": category, "amount": amount, "origin": "llm_estimate"}
+            for category, amount in estimates.items()]
+
+
+class PlanLine(BaseModel):
+    id: Optional[StrictInt] = None
+    category: str
+    amount: StrictInt
+
+
+class PlanUpdate(BaseModel):
+    lines: list[PlanLine]
+    base_lines: list[dict]
+    min_checking: Optional[StrictInt] = None
+
+
+@router.put("/plan")
+async def save_plan(body: PlanUpdate, user_id: int = Depends(get_current_user)):
+    return budget_service.save_plan(
+        user_id, [line.model_dump() for line in body.lines], body.base_lines,
+        body.min_checking, EventContext(source="user"),
     )
-    return lines

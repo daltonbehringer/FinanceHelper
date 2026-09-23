@@ -1,247 +1,112 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { useSettingsData } from '../hooks/useSettingsData'
 import { moneyInputCents, centsToDollarInput, formatMoney } from '../lib/utils'
-import { useSettings } from '../hooks/useSettings'
-import { useBudgetLines } from '../hooks/useBudgetLines'
-import { useAccounts } from '../hooks/useAccounts'
-import { useToast } from '../context/ToastContext'
-import Card, { CardHeader, CardBody } from '../components/ui/Card'
-import Input, { Select } from '../components/ui/Input'
+import { Select } from '../components/ui/Input'
+import Input from '../components/ui/Input'
 import MoneyInput from '../components/ui/MoneyInput'
 import Button from '../components/ui/Button'
 import Spinner from '../components/ui/Spinner'
 import BudgetEditor from '../components/settings/BudgetEditor'
+import SettingsSection from '../components/settings/SettingsSection'
+import '../styles/journal.css'
+import '../styles/settings.css'
+
+const PRIORITIES = [
+  { value: 'default', title: 'Let the advisor decide', detail: 'The advisor chooses a priority based on your current financial picture and explains its choice when relevant.' },
+  { value: 'aggressive_payoff', title: 'Prioritize debt payoff', detail: 'Direct available surplus to the highest-interest debt first, while preserving living costs and your cash cushion.' },
+  { value: 'balanced', title: 'Balance debt payoff and saving', detail: 'Pay down debt while aiming to save roughly 20% of monthly income over time, only within available free cash. This is guidance, not a reserved amount.' },
+  { value: 'conservative', title: 'Prioritize a cash buffer', detail: 'Build emergency savings before making aggressive extra debt payments. This preference does not increase your configured cash cushion automatically.' },
+  { value: 'wealth_building', title: 'Prioritize wealth building', detail: 'Favor retirement and tax-advantaged saving while addressing high-interest debt. This does not establish a personal investment risk profile.' },
+]
+const cashForm = (s) => ({ cash_cushion: centsToDollarInput(s.cash_cushion ?? 0), large_payment_threshold: centsToDollarInput(s.large_payment_threshold ?? 0), default_payment_account_id: s.default_payment_account_id ? String(s.default_payment_account_id) : '' })
+const locationForm = (s) => ({ zip_code: s.zip_code || '', household_size: s.household_size == null ? '' : String(s.household_size) })
+const priorityForm = (s) => ({ advice_posture: s.advice_posture || 'default' })
 
 export default function Settings() {
-  const { settings, loading, refetch } = useSettings()
-  const { accounts, loading: accountsLoading } = useAccounts()
-  const { lines: budgetLines, loading: budgetLoading, refetch: refetchBudgetLines } = useBudgetLines()
-  const { showToast } = useToast()
-  const [minChecking, setMinChecking] = useState('')
-  const [cashCushion, setCashCushion] = useState('')
-  const [largePaymentThreshold, setLargePaymentThreshold] = useState('')
-  const [defaultPaymentAccountId, setDefaultPaymentAccountId] = useState('')
-  const [advicePosture, setAdvicePosture] = useState('default')
-  const [zipCode, setZipCode] = useState('')
-  const [householdSize, setHouseholdSize] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
-
-  const checkingAccounts = accounts.filter(a => a.type === 'checking')
-  const monthlyTotal = budgetLines.length > 0
-    ? budgetLines.reduce((sum, line) => sum + line.amount, 0)
-    : moneyInputCents(minChecking)
-  const hasSavedEstimate = settings.living_budget_configured || settings.min_checking > 0
-
+  const { data, setData, loading, error, retry } = useSettingsData()
+  const [dirtySections, setDirtySections] = useState({})
+  const dirty = Object.values(dirtySections).some(Boolean)
+  const markDirty = useCallback((id, value) => setDirtySections((prev) => prev[id] === value ? prev : ({ ...prev, [id]: value })), [])
+  const markLivingDirty = useCallback((value) => markDirty('living-costs', value), [markDirty])
   useEffect(() => {
-    if (!loading) {
-      setCashCushion(centsToDollarInput(settings.cash_cushion ?? 0))
-      setLargePaymentThreshold(centsToDollarInput(settings.large_payment_threshold ?? 0))
-      setMinChecking(settings.living_budget_configured || settings.min_checking > 0 ? centsToDollarInput(settings.min_checking ?? 0) : '')
-      setDefaultPaymentAccountId(
-        settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
-      )
-      setAdvicePosture(settings.advice_posture || 'default')
-      setZipCode(settings.zip_code || '')
-      setHouseholdSize(settings.household_size != null ? String(settings.household_size) : '')
-    }
-  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size, settings.cash_cushion, settings.living_budget_configured, settings.large_payment_threshold])
+    if (!dirty) return
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
-  async function handleSave(e) {
-    e.preventDefault()
-    setSaveError('')
-    const value = moneyInputCents(minChecking) ?? 0
-    const cushion = moneyInputCents(cashCushion) ?? 0
-    const threshold = moneyInputCents(largePaymentThreshold) ?? 0
-    if (value < 0 || cushion < 0 || threshold < 0) {
-      setSaveError('Budget, cushion, and payment threshold cannot be negative')
-      return
+  async function savePreferences(payload) {
+    const response = await apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(payload) })
+    if (!response?.ok) {
+      const body = await response?.json().catch(() => null)
+      throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not save this section. Your changes are still here; try again.')
     }
-    const paymentId = defaultPaymentAccountId ? Number(defaultPaymentAccountId) : 0
-    setSaving(true)
-    try {
-      const resp = await apiFetch('/api/settings', {
-        method: 'PUT',
-        body: JSON.stringify({
-          ...(budgetLines.length === 0 && minChecking !== '' ? { min_checking: value } : {}),
-          cash_cushion: cushion,
-          large_payment_threshold: threshold,
-          default_payment_account_id: paymentId,
-          advice_posture: advicePosture,
-          zip_code: zipCode.trim(),
-          household_size: householdSize ? Number(householdSize) : null,
-        }),
-      })
-      if (resp && resp.ok) {
-        showToast('Settings saved', 'success')
-        refetch()
-      } else {
-        const error = await resp?.json().catch(() => null)
-        setSaveError(typeof error?.detail === 'string' ? error.detail : 'Failed to save settings')
-      }
-    } catch {
-      setSaveError('Failed to save settings')
-    } finally {
-      setSaving(false)
-    }
+    const saved = await response.json()
+    // Merge only this section; other sections may contain independent drafts.
+    const patch = Object.fromEntries(Object.keys(payload).map((key) => [key, saved[key]]))
+    setData((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }))
+    return saved
   }
 
-  if (loading || accountsLoading || (budgetLoading && budgetLines.length === 0)) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Spinner size="lg" className="text-accent" />
-      </div>
-    )
-  }
+  const settings = data?.settings || {}
+  const checking = data?.accounts.filter((a) => a.type === 'checking' && a.is_active !== 0 && a.is_active !== false) || []
+  const configured = settings.living_budget_configured || settings.min_checking > 0
+  const monthly = data?.lines.length ? data.lines.reduce((sum, line) => sum + line.amount, 0) : configured ? settings.min_checking : null
+  const priority = PRIORITIES.find((p) => p.value === (settings.advice_posture || 'default'))
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-text text-balance">Settings</h1>
-        <p className="text-sm text-text-muted mt-1 text-pretty">
-          Set your living costs, cash reserves, and advisor preferences.
-        </p>
-      </div>
-
-      <form onSubmit={handleSave} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <h2 className="text-base font-semibold text-text text-balance">Living costs</h2>
-          </CardHeader>
-          <CardBody className="space-y-5">
-            <p className="text-sm text-text-muted text-pretty">
-              Plan for groceries, gas, utilities, and other everyday costs. This monthly budget
-              feeds both safe to spend (prorated until payday) and projected monthly surplus.
-              Exclude payments already tracked in Expenses or Accounts.
-            </p>
-            <div className="rounded-lg border border-border bg-surface-sunken px-4 py-3 space-y-1">
-              <div className="flex flex-wrap justify-between gap-2 font-medium text-text">
-                <span>Monthly living-cost total</span>
-                <output aria-label="Monthly living-cost total" className="tabular-nums">{formatMoney(monthlyTotal)}</output>
-              </div>
-              <p className="text-sm text-text-muted text-pretty">
-                {budgetLines.length > 0
-                  ? 'Using your saved categories below. They replace the single monthly estimate.'
-                  : 'Using your single monthly estimate. Save Settings to apply changes.'}
-              </p>
-            </div>
-            {budgetLines.length === 0 ? (
-              <MoneyInput
-                label="Monthly living-cost estimate"
-                required
-                value={minChecking}
-                onValueChange={setMinChecking}
-                className="sm:max-w-xs"
-                aria-describedby="living-estimate-help"
-              />
-            ) : (
-              <p className="text-sm text-text-muted text-pretty">
-                {hasSavedEstimate
-                  ? `Your saved single estimate of ${formatMoney(settings.min_checking)} is inactive. Removing every category restores it.`
-                  : 'If you remove every category, enter a single monthly estimate instead.'}
-              </p>
-            )}
-            {budgetLines.length === 0 && (
-              <p id="living-estimate-help" className="text-sm text-text-muted text-pretty">
-                Enter one total, or add categories below to replace it. Set $0.00 if no living-cost reserve is needed.
-              </p>
-            )}
-            <div className="border-t border-border pt-5 space-y-4">
-              <h3 className="text-sm font-semibold text-text text-balance">Monthly categories (optional)</h3>
-              <BudgetEditor lines={budgetLines} refetch={refetchBudgetLines} zip={zipCode.trim()} householdSize={householdSize} showToast={showToast}>
-                <div className="border-t border-border pt-5 space-y-3">
-                  <h3 className="text-sm font-semibold text-text text-balance">Local estimates (optional)</h3>
-                  <p className="text-sm text-text-muted text-pretty">
-                    Enter your ZIP code and household size to fill in suggested categories.
-                    Review the amounts before relying on them. Categories you have edited
-                    are kept when you estimate again.
-                  </p>
-                  <div className="grid grid-cols-2 gap-4 sm:max-w-sm">
-                    <Input label="ZIP code" value={zipCode} onChange={(e) => setZipCode(e.target.value)}
-                      placeholder="e.g. 94110" inputMode="numeric" autoComplete="postal-code" />
-                    <Input label="Household size" type="number" min="1" step="1" value={householdSize}
-                      onChange={(e) => setHouseholdSize(e.target.value)} placeholder="Defaults to 1" />
-                  </div>
+    <div className="journal-page settings-page">
+      <header className="journal-header"><p className="journal-kicker">MAKE IT YOURS</p><h1>Settings.</h1><p className="journal-description">A plan that fits your everyday life. Set your spending boundaries and what matters to your advisor.</p></header>
+      {loading ? <div className="journal-panel journal-loading" role="status" aria-label="Loading settings"><Spinner size="lg" /></div>
+        : error ? <section className="journal-panel settings-load-error"><h2>Your settings couldn’t be loaded.</h2><p role="alert">{error}</p><Button onClick={retry}>Retry loading settings</Button></section>
+        : data && <div className="settings-layout">
+          <div className="settings-main">
+            <SettingsSection id="cash-planning" number="01" title="Cash planning" description="Choose the cash behind your plan and the reserves you want to protect." initial={cashForm(settings)} onDirty={markDirty} onSave={async (draft) => {
+              const cushion = moneyInputCents(draft.cash_cushion)
+              const threshold = moneyInputCents(draft.large_payment_threshold)
+              if (cushion === null || threshold === null) throw new Error('Enter valid dollar amounts for the cushion and threshold, including zero when off.')
+              return cashForm(await savePreferences({ cash_cushion: cushion, large_payment_threshold: threshold, default_payment_account_id: draft.default_payment_account_id ? Number(draft.default_payment_account_id) : 0 }))
+            }}>
+              {(draft, update) => <>
+                <Select label="Default payment account" value={draft.default_payment_account_id} onChange={(e) => update('default_payment_account_id', e.target.value)} aria-describedby="payment-help">
+                  <option value="">No default — combine active checking accounts</option>
+                  {settings.default_payment_account_id && !checking.some((a) => a.id === settings.default_payment_account_id) && <option value={settings.default_payment_account_id} disabled>Previously selected account is unavailable</option>}
+                  {checking.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </Select>
+                <p id="payment-help" className="settings-help">Safe to spend uses this account; payment forms suggest it as the funding source. With no default, the plan combines active checking balances and you choose a source for each payment.</p>
+                {!checking.length && <p className="settings-notice">Add an active checking account in <Link to="/accounts">Accounts</Link> to calculate safe to spend.</p>}
+                <div className="settings-field-grid">
+                  <div><MoneyInput label="Minimum cash cushion" required value={draft.cash_cushion} onValueChange={(v) => update('cash_cushion', v)} aria-describedby="cushion-help" /><p id="cushion-help" className="settings-help">Leave this fixed amount untouched after bills and living costs. It is not prorated. $0.00 sets a zero-dollar floor.</p></div>
+                  <div><MoneyInput label="Large payment threshold" required value={draft.large_payment_threshold} onValueChange={(v) => update('large_payment_threshold', v)} aria-describedby="holds-help" /><p id="holds-help" className="settings-help">{moneyInputCents(draft.large_payment_threshold) === 0 ? 'Off. ' : ''}Payments strictly above this amount are held at half their amount one pay period early, then in full during the due period. Set $0.00 to turn off.</p></div>
                 </div>
-              </BudgetEditor>
-            </div>
-          </CardBody>
-        </Card>
+                <div className="settings-example"><span className="journal-kicker">HOW EARLY HOLDS WORK</span><p>With a $1,000 threshold, $1,500 rent holds $750 one pay period early, then $1,500 total until paid. Holds reduce safe to spend; they do not transfer money.</p></div>
+              </>}
+            </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <h2 className="text-base font-semibold text-text text-balance">Cash reserves</h2>
-          </CardHeader>
-          <CardBody className="space-y-5">
-            <div>
-              <MoneyInput label="Minimum cash cushion" value={cashCushion} onValueChange={setCashCushion}
-                className="sm:max-w-xs" aria-describedby="cash-cushion-help" />
-              <p id="cash-cushion-help" className="mt-2 text-sm text-text-muted text-pretty">
-                A fixed amount to leave untouched after bills and living costs. It is not prorated.
-                Set $0.00 to use a zero-dollar floor.
-              </p>
-            </div>
-            <div>
-              <MoneyInput label="Large payment threshold" value={largePaymentThreshold} onValueChange={setLargePaymentThreshold}
-                className="sm:max-w-xs" aria-describedby="large-payment-help" />
-              <p id="large-payment-help" className="mt-2 text-sm text-text-muted text-pretty">
-                Set $0.00 to turn early holds off. Payments strictly above this amount reserve half
-                one pay period early, then the full unpaid amount in the due period.
-                For $1,500.00 rent, that means $750.00 first, then $1,500.00 total until paid.
-                These reserves reduce safe to spend; they do not move money or change monthly surplus.
-              </p>
-            </div>
-          </CardBody>
-        </Card>
+            <BudgetEditor lines={data.lines} settings={settings} onDirty={markLivingDirty} onSaved={(result) => setData((prev) => ({ ...prev, lines: result.lines, settings: { ...prev.settings, ...result.settings } }))} />
 
-        <Card>
-          <CardHeader>
-            <h2 className="text-base font-semibold text-text text-balance">Payment account</h2>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            <p id="payment-account-help" className="text-sm text-text-muted text-pretty">
-              Safe to spend uses the checking account selected here. It is also suggested as the
-              funding account when you record a payment. With no default, safe to spend combines
-              all active checking balances and you choose an account for each payment.
-            </p>
-            {checkingAccounts.length === 0 ? (
-              <p className="text-sm text-warning">Add a checking account in Accounts to calculate safe to spend.</p>
-            ) : (
-              <Select label="Default payment account" value={defaultPaymentAccountId}
-                onChange={(e) => setDefaultPaymentAccountId(e.target.value)} aria-describedby="payment-account-help">
-                <option value="">No default — choose for each payment</option>
-                {checkingAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </Select>
-            )}
-          </CardBody>
-        </Card>
+            <SettingsSection id="local-estimates" number="03" title="Local estimates" description="Optional household details for generating living-cost suggestions. Save these details before requesting a preview above." initial={locationForm(settings)} onDirty={markDirty} onSave={async (draft) => {
+              const zip = draft.zip_code.trim()
+              const size = draft.household_size === '' ? null : Number(draft.household_size)
+              if (zip && !/^[0-9]{5}(-[0-9]{4})?$/.test(zip)) throw new Error('Enter a valid US ZIP code (12345 or 12345-6789).')
+              if (size !== null && (!Number.isSafeInteger(size) || size < 1)) throw new Error('Household size must be a whole number of at least 1 within the supported range.')
+              return locationForm(await savePreferences({ zip_code: zip, household_size: size }))
+            }}>
+              {(draft, update) => <><div className="settings-field-grid"><Input label="ZIP code" value={draft.zip_code} onChange={(e) => update('zip_code', e.target.value)} pattern="[0-9]{5}(-[0-9]{4})?" inputMode="numeric" autoComplete="postal-code" placeholder="e.g. 94110" /><Input label="Household size" type="number" min="1" step="1" value={draft.household_size} onChange={(e) => update('household_size', e.target.value)} placeholder="Defaults to 1" /></div><p className="settings-help">Estimates use your area and household size, with one person assumed if blank. They are AI suggestions, not verified local prices. Review them for overlap with bills you already track.</p></>}
+            </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <h2 className="text-base font-semibold text-text text-balance">Advisor preferences</h2>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            <Select label="Advice style" value={advicePosture} onChange={(e) => setAdvicePosture(e.target.value)}
-              aria-describedby="advice-style-help">
-              <option value="default">Let the advisor decide</option>
-              <option value="aggressive_payoff">Prioritize debt payoff</option>
-              <option value="balanced">Balance debt payoff and saving</option>
-              <option value="conservative">Prioritize a cash buffer</option>
-              <option value="wealth_building">Prioritize wealth building</option>
-            </Select>
-            <p id="advice-style-help" className="text-sm text-text-muted text-pretty">
-              Guides the advisor's recommendations. Your living-cost budget, cash cushion, and
-              safe-to-spend calculation stay the same regardless of advice style.
-            </p>
-          </CardBody>
-        </Card>
-
-        {saveError && <p role="alert" className="text-sm text-debit">{saveError}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">Categories save automatically. Save all other settings here.</p>
-          <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</Button>
-        </div>
-      </form>
+            <SettingsSection id="advisor-priority" number="04" title="Advisor priority" description="Tell your advisor how to prioritize available money." initial={priorityForm(settings)} onDirty={markDirty} onSave={async (draft) => priorityForm(await savePreferences(draft))}>
+              {(draft, update) => <><Select label="Financial priority" value={draft.advice_posture} onChange={(e) => update('advice_posture', e.target.value)} aria-describedby="priority-description">{PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.title}</option>)}</Select><p id="priority-description" className="settings-priority-description">{PRIORITIES.find((p) => p.value === draft.advice_posture)?.detail}</p><p className="settings-help">This guides recommendations. Every priority respects the same computed free cash. It does not change your budget, cushion, or safe-to-spend calculation.</p></>}
+            </SettingsSection>
+          </div>
+          <aside className="settings-sidebar" aria-label="Saved cash-plan rules">
+            <div className="settings-rule-card"><p className="journal-kicker">YOUR CASH-PLAN RULES</p><h2>Room for<br />everyday life.</h2><p className="settings-rule-label">Saved monthly living costs</p><output aria-label="Saved monthly living costs" className="settings-rule-total">{monthly === null ? 'Not set' : formatMoney(monthly)}</output><p className="settings-rule-source">{data.lines.length ? `${data.lines.length} saved categories` : configured ? 'Single monthly estimate' : 'Set a total or add categories'}</p><dl><div><dt>Cash cushion</dt><dd>{formatMoney(settings.cash_cushion || 0)}</dd></div><div><dt>Early holds</dt><dd>{settings.large_payment_threshold ? `Above ${formatMoney(settings.large_payment_threshold)}` : 'Off'}</dd></div><div><dt>Checking cash</dt><dd>{settings.default_payment_account_id ? checking.find((a) => a.id === settings.default_payment_account_id)?.name || 'Review selection' : 'All active checking'}</dd></div></dl><p>Living costs are prorated until payday. Your cushion stays fixed.</p></div>
+            <div className="settings-side-note"><p className="journal-kicker">SAVED ADVISOR PRIORITY</p><h3>{priority?.title}</h3><p>Your advisor works within the cash available after your obligations and reserves.</p></div>
+            <p className="settings-draft-note" role="status">{dirty ? 'You have unsaved changes. Save each edited section to apply them.' : 'All shown rules reflect your saved settings.'}</p>
+          </aside>
+        </div>}
     </div>
   )
 }
