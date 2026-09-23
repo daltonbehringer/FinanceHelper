@@ -1,8 +1,8 @@
 """Due-date advancement.
 
 - advance_month (backend/lib/dates.py) clamps to month length.
-- Posting a snapshot with payment_made on a debt account auto-advances the
-  account's due_date past today.
+- Completing a required debt payment advances one unpaid occurrence;
+  other overdue occurrences must remain due.
 - Expense due_day is hard-bounded 1..28 (so the 'due on the 31st' expense case
   in the handoff doc cannot occur — see PHASE0-FINDINGS.md).
 """
@@ -27,27 +27,27 @@ def test_advance_month(start, expected):
     assert advance_month(start) == expected
 
 
-def test_snapshot_payment_advances_debt_due_date_past_today(client, user_a):
-    # Due date far in the past so it must advance multiple months.
-    acct = make_account(user_a, type="credit_card", balance=1000, due_date="2020-01-15")
+def test_snapshot_payment_covers_one_overdue_cycle(client, user_a):
+    # Paying one installment must not silently erase other overdue installments.
+    acct = make_account(user_a, type="credit_card", balance=1000, minimum_payment=200, due_date="2020-01-15")
     resp = client.post("/api/snapshots", json={
         "account_id": acct, "balance": 800, "payment_made": 200,
     })
     assert resp.status_code == 200
 
     new_due = date.fromisoformat(fetchone("SELECT due_date FROM accounts WHERE id = ?", (acct,))["due_date"])
-    assert new_due > date.today()
+    assert new_due == date(2020, 2, 15)
     assert new_due.day == 15  # preserved day-of-month
 
 
 def test_snapshot_without_payment_does_not_advance_due_date(client, user_a):
-    acct = make_account(user_a, type="credit_card", balance=1000, due_date="2020-01-15")
+    acct = make_account(user_a, type="credit_card", balance=1000, minimum_payment=200, due_date="2020-01-15")
     client.post("/api/snapshots", json={"account_id": acct, "balance": 800})
     assert fetchone("SELECT due_date FROM accounts WHERE id = ?", (acct,))["due_date"] == "2020-01-15"
 
 
 def test_non_debt_account_due_date_not_advanced(client, user_a):
-    acct = make_account(user_a, type="savings", balance=1000, due_date="2020-01-15")
+    acct = make_account(user_a, type="savings", balance=1000, minimum_payment=200, due_date="2020-01-15")
     client.post("/api/snapshots", json={"account_id": acct, "balance": 800, "payment_made": 200})
     assert fetchone("SELECT due_date FROM accounts WHERE id = ?", (acct,))["due_date"] == "2020-01-15"
 

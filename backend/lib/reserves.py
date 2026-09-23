@@ -1,281 +1,178 @@
-"""Pure 'safe-to-spend' math: how much of the liquid balance is already spoken
-for by upcoming bills, set aside paycheck by paycheck.
+"""Deterministic cash available until the next paycheck, in integer cents.
 
-For each bill we reserve a fixed share per paycheck: `bill ÷ (paychecks that land
-in its funding cycle)`. The reserve steps up on each payday — e.g. a monthly rent
-with biweekly pay reserves half after the first check, the rest after the second,
-then it's paid. This matches the user's "save half, then pay the rest" behaviour.
-
-When there's no usable pay cadence (no income / no last pay date), we fall back to
-a linear time accrual so the advisor still gets a reasonable safe-to-spend number.
-
-All amounts are INTEGER CENTS. `today` is passed in (never date.today() here) so
-the function is deterministic and unit-testable.
+Obligations are reserved in full through payday (debits may precede payroll).
+Living costs cover [today, payday), or today alone if payroll is due today.
+The incoming paycheck and bills after that boundary are never included.
 """
-
 import calendar
 from datetime import date, timedelta
+from fractions import Fraction
 
-from backend.lib.dates import advance_month, advance_year, next_payday
+from backend.lib.dates import advance_month, debt_payment_state, expense_due_date, next_payday, parse_date
 
-ONE_TIME_WINDOW_DAYS = 30
-
-
-def _month_before(d: date) -> date:
-    """The same calendar day one month earlier, clamped to month length."""
-    if d.month == 1:
-        y, m = d.year - 1, 12
-    else:
-        y, m = d.year, d.month - 1
-    last = calendar.monthrange(y, m)[1]
-    return date(y, m, min(d.day, last))
+DEBT_TYPES = {"credit_card", "loan", "mortgage", "line_of_credit"}
 
 
-def _year_before(d: date) -> date:
-    try:
-        return d.replace(year=d.year - 1)
-    except ValueError:  # Feb 29 -> Feb 28
-        return d.replace(year=d.year - 1, day=28)
+def living_budget(settings, budget_lines):
+    if budget_lines:
+        return sum(max(0, line["amount"]) for line in budget_lines), "budget_lines"
+    if settings.get("living_budget_configured") or settings.get("min_checking", 0) > 0:
+        return max(0, settings.get("min_checking") or 0), "monthly_fallback"
+    return None, "missing"
 
 
-def _next_occurrence(due_day: int, today: date) -> date:
-    """Next occurrence of a monthly due_day on or after today."""
-    last = calendar.monthrange(today.year, today.month)[1]
-    candidate = today.replace(day=min(due_day, last))
-    if candidate < today:
-        candidate = advance_month(candidate)
-    return candidate
+def prorated_living_cost(monthly_cents: int, today: date, payday: date) -> int:
+    # Aggregate exact fractions and round UP once, never under-reserve a cent.
+    end = max(payday, today + timedelta(days=1))
+    total = Fraction(0)
+    day = today
+    while day < end:
+        boundary = advance_month(day.replace(day=1))
+        stop = min(boundary, end)
+        total += Fraction(monthly_cents * (stop - day).days, calendar.monthrange(day.year, day.month)[1])
+        day = stop
+    return (total.numerator + total.denominator - 1) // total.denominator
 
 
-def _step_forward(d: date, frequency: str) -> date:
-    if frequency == "weekly":
-        return d + timedelta(days=7)
-    if frequency == "biweekly":
-        return d + timedelta(days=14)
-    if frequency == "semimonthly":
-        return d + timedelta(days=15)
-    if frequency == "monthly":
-        return advance_month(d)
-    if frequency == "annual":
-        return advance_year(d)
-    return d + timedelta(days=30)
-
-
-def _step_back(d: date, frequency: str) -> date:
-    if frequency == "weekly":
-        return d - timedelta(days=7)
-    if frequency == "biweekly":
-        return d - timedelta(days=14)
-    if frequency == "semimonthly":
-        return d - timedelta(days=15)
-    if frequency == "monthly":
-        return _month_before(d)
-    if frequency == "annual":
-        return _year_before(d)
-    return d - timedelta(days=30)
-
-
-def count_paydays(last_pay_date: str | None, frequency: str, start: date, end: date) -> int:
-    """Number of paydays in the half-open window (start, end].
-
-    Paydays are anchored at last_pay_date and recur by frequency in both
-    directions. Returns 0 if the cadence can't be determined or end <= start.
-    """
-    if not last_pay_date or end <= start:
-        return 0
-    try:
-        d = date.fromisoformat(last_pay_date.split("T")[0])
-    except (ValueError, AttributeError):
-        return 0
-    while d > start:               # walk back to at/just-before the window start
-        d = _step_back(d, frequency)
-    while d <= start:              # advance to the first payday strictly after start
-        d = _step_forward(d, frequency)
-    count = 0
-    while d <= end:
-        count += 1
-        d = _step_forward(d, frequency)
-    return count
-
-
-def _primary_income(income: list[dict]) -> dict | None:
-    """The income source driving the pay cadence: the largest with a pay date."""
-    candidates = [i for i in income if i.get("last_pay_date")]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda i: i.get("amount") or 0)
-
-
-def _bill_window(expense: dict, today: date):
-    """(due_date, funding_window_start) for a bill, or (None, None) if undatable."""
-    if expense.get("is_recurring", 1) and expense.get("due_day"):
-        due = _next_occurrence(expense["due_day"], today)
-        return due, _month_before(due)
-    if expense.get("due_date"):
-        due = date.fromisoformat(expense["due_date"].split("T")[0])
-        return due, due - timedelta(days=ONE_TIME_WINDOW_DAYS)
-    return None, None
-
-
-def reserved_for_bill(amount: int, window_start: date, due: date, today: date) -> int:
-    """Linear time accrual from window_start (0) to due (full). Fallback when
-    there's no pay cadence to step by."""
-    if today >= due:
-        return amount
-    if today <= window_start:
-        return 0
-    total = (due - window_start).days
-    if total <= 0:
-        return amount
-    elapsed = (today - window_start).days
-    return round(amount * elapsed / total)
-
-
-def compute_reserves(expenses: list[dict], income: list[dict], today: date) -> dict:
-    """Sum what should already be set aside for upcoming bills, paycheck by
-    paycheck.
-
-    `expenses`: dicts with `amount` (cents), `due_day`, `due_date`,
-    `is_recurring`, optional `name`. `income`: dicts with `amount`, `frequency`,
-    `last_pay_date`. Undatable bills are skipped. Returns
-    ``{"total": cents, "bills": [{name, amount, due, reserved, per_paycheck}]}``
-    where `per_paycheck` is the fixed amount set aside each payday (None when the
-    linear fallback is used or the bill is due now).
-    """
-    primary = _primary_income(income)
-    bills = []
-    total = 0
-    for e in expenses:
-        due, window_start = _bill_window(e, today)
-        if due is None:
-            continue
-        amount = e["amount"]
-        per_paycheck = None
-
-        if today >= due:
-            reserved = amount  # due/overdue — needed in full now
-        elif primary:
-            total_pc = count_paydays(
-                primary["last_pay_date"], primary["frequency"], window_start, due
-            )
-            if total_pc <= 0:
-                reserved = amount  # no payday lands before it's due — need it now
-            else:
-                received = count_paydays(
-                    primary["last_pay_date"], primary["frequency"], window_start, today
-                )
-                per_paycheck = round(amount / total_pc)
-                reserved = min(amount, per_paycheck * received)
-        else:
-            reserved = reserved_for_bill(amount, window_start, due, today)  # linear fallback
-
-        if reserved <= 0:
-            continue
-        total += reserved
-        bills.append({
-            "name": e.get("name"),
-            "amount": amount,
-            "due": due.isoformat(),
-            "reserved": reserved,
-            "per_paycheck": per_paycheck,
-        })
-    return {"total": total, "bills": bills}
-
-
-def safe_to_spend(checking_balance: int, reserved_total: int) -> int:
-    """What's actually available for everyday/variable spending: the liquid
-    balance minus what's set aside for upcoming bills.
-
-    The user's "spending money" target is a SEPARATE floor on this number, not a
-    second subtraction — anything above it is surplus for debt/savings. Can go
-    negative (bills exceed cash), which is itself a useful signal.
-    """
-    return checking_balance - reserved_total
-
-
-def next_payday_info(income: list[dict], today: date) -> tuple | None:
-    """Soonest upcoming payday across all income sources.
-    Returns (date, amount_cents, name, frequency) or None."""
-    best = None
+def next_payday_info(income: list[dict], today: date) -> dict | None:
+    scheduled = []
     for inc in income:
-        np = next_payday(inc.get("last_pay_date"), inc.get("frequency", "monthly"))
-        if not np:
+        if (inc.get("amount") or 0) <= 0:
             continue
-        d = date.fromisoformat(np)
-        if best is None or d < best[0]:
-            best = (d, inc["amount"], inc["name"], inc.get("frequency", "monthly"))
-    return best
+        payday = next_payday(inc.get("last_pay_date"), inc.get("frequency", "monthly"), today,
+                             inc.get("income_day"), inc.get("second_income_day"))
+        if payday:
+            scheduled.append((payday, inc))
+    if not scheduled:
+        return None
+    first = min(d for d, _ in scheduled)
+    same_day = [i for d, i in scheduled if d == first]
+    return {"date": first, "amount": sum(i["amount"] for i in same_day),
+            "name": ", ".join(i["name"] for i in same_day)}
 
 
-def select_checking(accounts: list[dict], settings: dict) -> tuple:
-    """Liquid balance + label used for safe-to-spend: the default payment account
-    if configured, else the summed balance of checking accounts. Returns
-    (balance, label) or (None, None) when there's no checking money to draw on."""
+def selected_checking(accounts, settings):
+    checking = [a for a in accounts if a["type"] == "checking" and a.get("is_active", 1)]
     default_id = settings.get("default_payment_account_id")
-    checking_accts = [a for a in accounts if a["type"] == "checking"]
-    src = next((a for a in accounts if a["id"] == default_id), None) if default_id else None
-    if src:
-        return src["current_balance"], src["name"]
-    if checking_accts:
-        return sum(a["current_balance"] for a in checking_accts), "Checking"
-    return None, None
+    if default_id:
+        return [a for a in checking if a["id"] == default_id]
+    return checking
 
 
-def safe_to_spend_summary(
-    accounts: list[dict], settings: dict, expenses: list[dict],
-    income: list[dict], today: date,
-) -> dict:
-    """The full safe-to-spend picture, shared by the advisor prompt and the
-    dashboard tile so the two never drift. All amounts are INTEGER CENTS.
+def select_checking(accounts, settings):
+    selected = selected_checking(accounts, settings)
+    if not selected:
+        return None, None
+    return sum(a["current_balance"] for a in selected), ", ".join(a["name"] for a in selected)
 
-    `available` is the headline figure the advisor states: what's safe to spend
-    BEFORE the next paycheck — bills due on/before it held in full, bills due
-    later held only at their paycheck-stepped reserve. With no usable pay cadence
-    it falls back to balance-minus-total-reserves. `checking_balance` is None when
-    there's no checking money (advisor/tile then show nothing meaningful)."""
-    checking_balance, checking_label = select_checking(accounts, settings)
-    reserves = compute_reserves(expenses, income, today)
-    reserved_total = reserves["total"]
-    floor = settings.get("min_checking") or 0
 
-    if checking_balance is None:
-        return {
-            "available": None,
-            "checking_balance": None,
-            "checking_label": None,
-            "reserved_total": reserved_total,
-            "safe_to_spend_now": None,
-            "bills": reserves["bills"],
-            "floor": floor,
-            "next_payday": None,
-        }
+def safe_to_spend_summary(accounts, settings, expenses, income, today, budget_lines=None):
+    accounts = [a for a in accounts if a.get("is_active", 1)]
+    expenses = [e for e in expenses if e.get("is_active", 1)]
+    income = [i for i in income if i.get("is_active", 1)]
+    budget_lines = budget_lines or []
+    cash, label = select_checking(accounts, settings)
+    payday = next_payday_info(income, today)
+    end = parse_date(payday["date"]) if payday else None
+    monthly, budget_source = living_budget(settings, budget_lines)
+    cushion = max(0, settings.get("cash_cushion") or 0)
+    issues, bills = [], []
+    if cash is None:
+        issues.append("Choose an active checking account in Settings or add one in Accounts.")
+    if not payday:
+        issues.append("Set an income schedule so the next paycheck can be determined.")
+    if monthly is None:
+        issues.append("Set a living-cost budget in Settings, including zero if none is needed.")
+    for inc in income:
+        if (inc.get("amount") or 0) > 0 and not next_payday(
+            inc.get("last_pay_date"), inc.get("frequency", "monthly"), today,
+            inc.get("income_day"), inc.get("second_income_day"),
+        ):
+            issues.append(f"Complete the pay schedule for {inc['name']}.")
 
-    sts_now = safe_to_spend(checking_balance, reserved_total)
-    next_pd = next_payday_info(income, today)
-    next_payday_out = None
-    available = sts_now
-    if next_pd:
-        pd_date, pd_amount, pd_name, pd_freq = next_pd
-        pd_iso = pd_date.isoformat()
-        bills_due_before = sum(b["amount"] for b in reserves["bills"] if b["due"] <= pd_iso)
-        reserved_later = sum(b["reserved"] for b in reserves["bills"] if b["due"] > pd_iso)
-        available = checking_balance - bills_due_before - reserved_later
-        next_payday_out = {
-            "date": pd_iso,
-            "amount": pd_amount,
-            "name": pd_name,
-            "frequency": pd_freq,
-            "bills_due_before": bills_due_before,
-            "reserved_later": reserved_later,
-        }
+    def add_bill(kind, item, due, amount):
+        bills.append({"kind": kind, "id": item["id"], "name": item["name"],
+                      "due": due.isoformat(), "amount": amount, "overdue": due < today})
 
+    debt_accounts = {a["id"]: a for a in accounts if a["type"] in DEBT_TYPES}
+    for account in debt_accounts.values():
+        balance = max(0, account["current_balance"])
+        if not balance:
+            continue
+        due = parse_date(account.get("due_date"))
+        required = account.get("minimum_payment")
+        if required is None or required < 0 or (required > 0 and not due):
+            issues.append(f"Set the required payment and next unpaid due date for {account['name']}.")
+            continue
+        if not required:
+            continue  # An explicitly recorded zero payment.
+        remaining = account.get("payment_remaining")
+        amount = required if remaining is None else max(0, remaining)
+        while end and due <= end:
+            # Reserve the configured installment, which can include interest;
+            # principal balance alone cannot cap future required payments.
+            if amount:
+                add_bill("account", account, due, amount)
+            due = advance_month(due)
+            amount = required
+
+    for expense in expenses:
+        linked = expense.get("linked_account_id")
+        if linked:
+            if linked not in debt_accounts:
+                issues.append(f"Review the tracked account linked to {expense['name']}.")
+            continue  # The account is the single source of payment amount/date.
+        if expense["amount"] <= 0:
+            continue
+        due = expense_due_date(expense, today)
+        if not due:
+            issues.append(f"Set the next unpaid due date for {expense['name']}.")
+            continue
+        while end and due <= end:
+            add_bill("expense", expense, due, expense["amount"])
+            if not expense.get("is_recurring", 1):
+                break
+            due = advance_month(due)
+
+    bills.sort(key=lambda b: (b["due"], b["name"]))
+    account_total = sum(b["amount"] for b in bills if b["kind"] == "account")
+    expense_total = sum(b["amount"] for b in bills if b["kind"] == "expense")
+    living = prorated_living_cost(monthly, today, end) if monthly is not None and end else None
+    complete = not issues
+    projected = cash - account_total - expense_total - living - cushion if complete else None
     return {
-        "available": available,
-        "checking_balance": checking_balance,
-        "checking_label": checking_label,
-        "reserved_total": reserved_total,
-        "safe_to_spend_now": sts_now,
-        "bills": reserves["bills"],
-        "floor": floor,
-        "next_payday": next_payday_out,
+        "as_of": today.isoformat(), "complete": complete, "issues": issues,
+        "available": max(0, projected) if complete else None,
+        "projected_balance": projected,
+        "shortfall": max(0, -projected) if complete else None,
+        "checking_balance": cash, "checking_label": label,
+        "included_accounts": [{"id": a["id"], "name": a["name"], "balance": a["current_balance"]}
+                              for a in selected_checking(accounts, settings)],
+        "next_payday": payday, "account_payments": account_total, "expense_payments": expense_total,
+        "living_costs": living, "monthly_living_budget": monthly, "budget_source": budget_source,
+        "cash_cushion": cushion, "bills": bills,
+        "reserved_total": account_total + expense_total,
     }
+
+
+def project_payment(accounts, expenses, preview, today):
+    """Mirror a proposed write without mutating data, for affordability warnings."""
+    accounts = [dict(a) for a in accounts]
+    expenses = [dict(e) for e in expenses]
+    source = preview.get("source")
+    for account in accounts:
+        if source and account["id"] == source["account_id"]:
+            account["current_balance"] = source["new_balance"]
+        if account["id"] == preview.get("account_id"):
+            account["current_balance"] = preview["new_balance"]
+            if account["type"] in DEBT_TYPES and preview.get("payment_made"):
+                account.update(debt_payment_state(account, preview["payment_made"]))
+    for expense in expenses:
+        if expense["id"] == preview.get("expense_id"):
+            if expense.get("is_recurring", 1):
+                due = expense_due_date(expense, today)
+                if due:
+                    expense["next_due_date"] = advance_month(due).isoformat()
+            else:
+                expense["is_active"] = 0
+    return accounts, expenses

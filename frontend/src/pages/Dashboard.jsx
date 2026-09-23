@@ -12,8 +12,6 @@ import {
   formatMoney,
   formatDate,
   isDebt,
-  monthlyEquiv,
-  nextPaydayDate,
 } from '../lib/utils'
 import StatCard from '../components/ui/StatCard'
 import Card, { CardHeader, CardBody } from '../components/ui/Card'
@@ -22,6 +20,7 @@ import Spinner from '../components/ui/Spinner'
 import Markdown from '../components/ui/Markdown'
 import AdvisorChat from '../components/dashboard/AdvisorChat'
 import NetWorthHero from '../components/dashboard/NetWorthHero'
+import SpendingBreakdown from '../components/dashboard/SpendingBreakdown'
 import AccountsSnapshot from '../components/dashboard/AccountsSnapshot'
 
 const RECOMMEND_PROMPT = 'What should I prioritize this month?'
@@ -32,10 +31,10 @@ function resolvedBalance(a) {
 
 export default function Dashboard() {
   const { accounts, loading: accountsLoading, refetch: refetchAccounts } = useAccounts()
-  const { expenses, loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
-  const { income, loading: incomeLoading, refetch: refetchIncome } = useIncome()
+  const { loading: expensesLoading, refetch: refetchExpenses } = useExpenses()
+  const { loading: incomeLoading, refetch: refetchIncome } = useIncome()
   const { series: netWorthSeries, loading: netWorthLoading } = useNetWorth()
-  const { summary: safeToSpend, refetch: refetchSafeToSpend } = useSafeToSpend()
+  const { summary: safeToSpend, loading: safeToSpendLoading, refetch: refetchSafeToSpend } = useSafeToSpend()
   const { summary: spendingMoney, refetch: refetchSpendingMoney } = useSpendingMoney()
   const { showToast } = useToast()
   const { registerRefresh } = useAdvisorChatContext()
@@ -54,32 +53,13 @@ export default function Dashboard() {
 
   const loading = accountsLoading || expensesLoading || incomeLoading
 
-  // ── Stat tiles (all computed client-side from existing hooks/utils) ──────────
+  // Cash planning and pay dates come from the shared backend calculation.
   const stats = useMemo(() => {
     const debtAccounts = accounts.filter((a) => isDebt(a.type))
     const totalDebt = debtAccounts.reduce((s, a) => s + resolvedBalance(a), 0)
 
-    // Next payday: soonest next payday across active recurring income; expected
-    // amount = sum of the per-period amounts that land on that date.
-    const paydays = income
-      .map((i) => ({ date: nextPaydayDate(i.last_pay_date, i.frequency), amount: i.amount ?? 0 }))
-      .filter((p) => p.date)
-      .sort((a, b) => a.date.localeCompare(b.date))
-    const nextPay = paydays[0]?.date ?? null
-    const nextPayAmount = nextPay
-      ? paydays.filter((p) => p.date === nextPay).reduce((s, p) => s + p.amount, 0)
-      : 0
-
-    // Monthly cash flow: income monthly-equiv − recurring-expense monthly-equiv.
-    // Recurring expenses (due_day) are monthly, so their amount IS the monthly equiv.
-    const monthlyIncome = income.reduce((s, i) => s + monthlyEquiv(i.amount ?? 0, i.frequency), 0)
-    const monthlyExpense = expenses
-      .filter((e) => e.is_recurring)
-      .reduce((s, e) => s + (e.amount ?? 0), 0)
-    const cashFlow = Math.round(monthlyIncome - monthlyExpense)
-
-    return { totalDebt, nextPay, nextPayAmount, cashFlow }
-  }, [accounts, expenses, income])
+    return { totalDebt }
+  }, [accounts])
 
   // Recommendation: folded into the chat endpoint (Phase 2). The canned
   // monthly-plan prompt streams back markdown text; no tool/confirmation.
@@ -142,24 +122,23 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Next payday"
-          value={stats.nextPay ? formatDate(stats.nextPay) : '—'}
-          subtitle={stats.nextPay ? `${formatMoney(stats.nextPayAmount)} expected` : 'No recurring income'}
+          value={safeToSpend?.next_payday ? formatDate(safeToSpend.next_payday.date) : '—'}
+          subtitle={safeToSpend?.next_payday ? `${formatMoney(safeToSpend.next_payday.amount)} expected` : 'Set an income schedule'}
         />
         <StatCard
           label="Safe to spend"
           value={safeToSpend?.available != null ? formatMoney(safeToSpend.available) : '—'}
-          valueColor={(safeToSpend?.available ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
-          subtitle={
-            safeToSpend?.next_payday
-              ? `before ${formatDate(safeToSpend.next_payday.date)}`
-              : 'after upcoming bills'
-          }
+          valueColor={safeToSpend?.shortfall > 0 ? 'text-debit' : 'text-credit'}
+          subtitle={safeToSpendLoading ? 'Calculating…' : !safeToSpend?.complete ? 'Estimate incomplete — see details below'
+            : safeToSpend.shortfall > 0 ? `${formatMoney(safeToSpend.shortfall)} short before ${formatDate(safeToSpend.next_payday.date)}`
+            : `free through ${formatDate(safeToSpend.next_payday.date)}`}
+
         />
         <StatCard
-          label="Spending money / mo"
+          label="Projected monthly surplus"
           value={spendingMoney?.has_budget ? formatMoney(spendingMoney.spending_money) : '—'}
           valueColor={(spendingMoney?.spending_money ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
-          subtitle={spendingMoney?.has_budget ? 'after bills & budget' : 'set a budget in Settings'}
+          subtitle={spendingMoney?.issues?.length ? 'Required payments incomplete' : spendingMoney?.has_budget ? 'average after bills, debt & living costs' : 'set a budget in Settings'}
         />
         <StatCard
           label="Total debt"
@@ -168,11 +147,13 @@ export default function Dashboard() {
         />
         <StatCard
           label="Monthly cash flow"
-          value={formatMoney(stats.cashFlow)}
-          valueColor={stats.cashFlow >= 0 ? 'text-credit' : 'text-debit'}
+          value={formatMoney(spendingMoney?.monthly_cash_flow)}
+          valueColor={(spendingMoney?.monthly_cash_flow ?? 0) >= 0 ? 'text-credit' : 'text-debit'}
           subtitle="income − recurring expenses"
         />
       </div>
+
+      <SpendingBreakdown summary={safeToSpend} loading={safeToSpendLoading} />
 
       {/* Accounts snapshot — grouped Debts / Assets */}
       <AccountsSnapshot accounts={accounts} />

@@ -67,6 +67,9 @@ def update_account(user_id: int, account_id: int, updates: dict, ctx: EventConte
             old = dict(row)
 
             validate_account_fields(old["type"], updates)
+            updates = dict(updates)
+            if any(k in updates and updates[k] != old[k] for k in ("due_date", "minimum_payment")):
+                updates["payment_remaining"] = None
 
             # Reads prefer the latest snapshot over accounts.balance. Record an
             # edited balance there before updating the fallback, so the event's

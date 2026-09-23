@@ -23,11 +23,19 @@ def test_biweekly_advances_in_14_day_steps():
     assert (nxt - date.fromisoformat(last)).days % 14 == 0
 
 
-def test_semimonthly_advances_in_15_day_steps():
-    last = (date.today() - timedelta(days=40)).isoformat()
-    nxt = date.fromisoformat(next_payday(last, "semimonthly"))
-    assert nxt > date.today()
-    assert (nxt - date.fromisoformat(last)).days % 15 == 0
+def test_semimonthly_uses_calendar_days_and_month_end():
+    assert next_payday('2026-01-31', 'semimonthly', date(2026, 2, 16), 15, 31) == '2026-02-28'
+    assert next_payday('2026-02-28', 'semimonthly', date(2026, 3, 1), 15, 31) == '2026-03-15'
+    assert next_payday('2026-02-15', 'semimonthly', date(2026, 2, 16)) is None
+
+
+def test_monthly_recovers_original_day_after_february():
+    assert next_payday('2026-01-31', 'monthly', date(2026, 3, 1)) == '2026-03-31'
+
+
+def test_payday_today_is_expected_until_recorded_received():
+    assert next_payday('2026-06-06', 'biweekly', date(2026, 6, 20)) == '2026-06-20'
+    assert next_payday('2026-06-20', 'biweekly', date(2026, 6, 20)) == '2026-07-04'
 
 
 def test_monthly_year_rollover():

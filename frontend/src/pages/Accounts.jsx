@@ -242,7 +242,7 @@ export default function Accounts() {
       onClose={() => setPayTarget(null)}
       title={payTarget ? `Pay ${payTarget.name}` : 'Pay debt'}
       label="Debits the source account and reduces this debt by the same amount."
-      defaultAmount={payTarget?.minimum_payment}
+      defaultAmount={payTarget?.payment_remaining ?? payTarget?.minimum_payment}
       accounts={crud.items ?? []}
       defaultSourceId={settings?.default_payment_account_id}
       requireSource

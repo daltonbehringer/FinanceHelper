@@ -219,7 +219,7 @@ _CENTS_MIGRATIONS = {
                 name            TEXT NOT NULL,
                 amount          INTEGER NOT NULL,
                 frequency       TEXT NOT NULL,
-                income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 28),
+                income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 31),
                 last_pay_date   TEXT,
                 is_active       INTEGER NOT NULL DEFAULT 1,
                 created_at      TEXT NOT NULL
@@ -333,6 +333,53 @@ def _migrate_settings_zip_household(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE user_settings ADD COLUMN household_size INTEGER")
 
 
+def _migrate_cashflow(conn):
+    """Add planning fields after legacy table rebuilds, for fresh and old DBs."""
+    # Widen the calendar pay day without losing old rows or other new fields.
+    schema = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'recurring_income'").fetchone()[0]
+    if "BETWEEN 1 AND 28" in schema:
+        conn.execute("PRAGMA legacy_alter_table = ON")
+        conn.execute("ALTER TABLE recurring_income RENAME TO recurring_income_payday_backup")
+        conn.execute("PRAGMA legacy_alter_table = OFF")
+        conn.execute(schema.replace("BETWEEN 1 AND 28", "BETWEEN 1 AND 31"))
+        conn.execute("INSERT INTO recurring_income SELECT * FROM recurring_income_payday_backup")
+        conn.execute("DROP TABLE recurring_income_payday_backup")
+    additions = {
+        "accounts": {"payment_remaining": "INTEGER"},
+        "recurring_expenses": {
+            "next_due_date": "TEXT",
+            "linked_account_id": "INTEGER REFERENCES accounts(id)",
+        },
+        "recurring_income": {"second_income_day": "INTEGER"},
+        "user_settings": {
+            "cash_cushion": "INTEGER NOT NULL DEFAULT 0",
+            "living_budget_configured": "INTEGER NOT NULL DEFAULT 0",
+        },
+    }
+    from datetime import date
+    from backend.lib.dates import expense_due_date, parse_date
+
+    for table, fields in additions.items():
+        columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in fields.items():
+            if name in columns:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+            if name == "second_income_day":
+                for row in conn.execute("SELECT * FROM recurring_income WHERE frequency = 'monthly' AND income_day IS NULL").fetchall():
+                    paid = parse_date(row["last_pay_date"])
+                    if paid:
+                        conn.execute("UPDATE recurring_income SET income_day = ? WHERE id = ?", (paid.day, row["id"]))
+            if name == "living_budget_configured":
+                conn.execute("UPDATE user_settings SET living_budget_configured = 1 WHERE min_checking > 0")
+            if name == "next_due_date":
+                for row in conn.execute("SELECT * FROM recurring_expenses WHERE is_recurring = 1").fetchall():
+                    due = expense_due_date(dict(row), date.today())
+                    if due:
+                        conn.execute("UPDATE recurring_expenses SET next_due_date = ? WHERE id = ?",
+                                     (due.isoformat(), row["id"]))
+
+
 def init_db():
     conn = get_db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -437,7 +484,7 @@ def init_db():
             name            TEXT NOT NULL,
             amount          INTEGER NOT NULL,
             frequency       TEXT NOT NULL,
-            income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 28),
+            income_day      INTEGER CHECK(income_day IS NULL OR income_day BETWEEN 1 AND 31),
             last_pay_date   TEXT,
             is_active       INTEGER NOT NULL DEFAULT 1,
             created_at      TEXT NOT NULL
@@ -483,6 +530,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_pending_actions_user_status
             ON pending_actions(user_id, status);
     """)
+    with conn:
+        _migrate_cashflow(conn)
     conn.commit()
     conn.close()
 

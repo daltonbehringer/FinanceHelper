@@ -6,12 +6,11 @@ under one correlation_id.
 """
 
 import sqlite3
-from datetime import date
 
 from fastapi import HTTPException
 
 from backend.db import get_db
-from backend.lib.dates import advance_month, utc_now_iso
+from backend.lib.dates import debt_payment_state, utc_now_iso
 from backend.services._core import EventContext, log_event, with_correlation
 
 DEBT_TYPES = {"credit_card", "loan", "mortgage", "line_of_credit"}
@@ -79,25 +78,18 @@ def create_snapshot_tx(
         amount_delta=balance - prev_balance,
     )
 
-    # Auto-advance due_date by 1 month for debt accounts when a payment is made.
-    if payment_made and account["type"] in DEBT_TYPES and account["due_date"]:
-        try:
-            old_due = date.fromisoformat(account["due_date"])
-            today = date.today()
-            new_due = advance_month(old_due)
-            while new_due <= today:
-                new_due = advance_month(new_due)
+    if payment_made and account["type"] in DEBT_TYPES:
+        updates = debt_payment_state(dict(account), payment_made)
+        if updates:
             conn.execute(
-                "UPDATE accounts SET due_date = ? WHERE id = ? AND user_id = ?",
-                (new_due.isoformat(), account_id, user_id),
+                f"UPDATE accounts SET {', '.join(f'{k} = ?' for k in updates)} WHERE id = ? AND user_id = ?",
+                (*updates.values(), account_id, user_id),
             )
             log_event(
                 conn, user_id=user_id, entity_type="account", entity_id=account_id,
                 action="update", ctx=ctx,
-                changes={"due_date": {"old": account["due_date"], "new": new_due.isoformat()}},
+                changes={k: {"old": account[k], "new": v} for k, v in updates.items()},
             )
-        except (ValueError, TypeError):
-            pass  # Skip if due_date is malformed
 
     return snapshot
 

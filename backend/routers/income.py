@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, StrictInt
 
 from backend.auth import get_current_user
 from backend.db import fetchall
+from backend.lib.dates import next_payday
 from backend.services import income as income_service
 from backend.services._core import EventContext
 
@@ -20,7 +21,8 @@ class IncomeCreate(BaseModel):
     name: str = Field(max_length=MAX_TEXT)
     amount: StrictInt  # integer cents; floats are rejected
     frequency: str
-    income_day: Optional[int] = None  # day of month (1-28), optional
+    income_day: Optional[int] = None  # day of month (1-31; 31 means month end), optional
+    second_income_day: Optional[int] = Field(default=None, ge=1, le=31)
     last_pay_date: Optional[str] = None
 
 
@@ -29,6 +31,7 @@ class IncomeUpdate(BaseModel):
     amount: Optional[StrictInt] = None
     frequency: Optional[str] = None
     income_day: Optional[int] = None
+    second_income_day: Optional[int] = Field(default=None, ge=1, le=31)
     last_pay_date: Optional[str] = None
 
 
@@ -41,8 +44,8 @@ def _check_frequency(frequency):
 
 
 def _check_income_day(income_day):
-    if income_day is not None and not (1 <= income_day <= 28):
-        raise HTTPException(status_code=422, detail="income_day must be between 1 and 28")
+    if income_day is not None and not (1 <= income_day <= 31):
+        raise HTTPException(status_code=422, detail="income_day must be between 1 and 31")
 
 
 @router.get("")
@@ -55,7 +58,8 @@ async def list_income(
         f"SELECT * FROM recurring_income WHERE user_id = ? {active_filter} ORDER BY name",
         (user_id,),
     )
-    return [dict(r) for r in rows]
+    return [dict(r) | {"next_payday": next_payday(r["last_pay_date"], r["frequency"],
+                         income_day=r["income_day"], second_income_day=r["second_income_day"])} for r in rows]
 
 
 @router.post("")
@@ -71,7 +75,9 @@ async def create_income(body: IncomeCreate, user_id: int = Depends(get_current_u
 async def update_income(
     income_id: int, body: IncomeUpdate, user_id: int = Depends(get_current_user)
 ):
-    updates = body.model_dump(exclude_none=True)
+    updates = body.model_dump(exclude_unset=True)
+    if any(k in updates and updates[k] is None for k in ("name", "amount", "frequency")):
+        raise HTTPException(status_code=422, detail="Name, amount and frequency cannot be null")
     if "frequency" in updates:
         _check_frequency(updates["frequency"])
     if "income_day" in updates:

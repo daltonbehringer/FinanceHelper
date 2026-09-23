@@ -18,10 +18,12 @@ from pydantic import BaseModel, StrictInt
 
 from backend.auth import get_current_user
 from backend.rate_limit import limiter
-from backend.routers.ai import (
-    MODEL,
-    _get_expenses_for_user,
-    _get_income_for_user,
+from backend.routers.ai import MODEL
+from backend.services.financial_data import (
+    get_expenses_for_user as _get_expenses_for_user,
+    get_income_for_user as _get_income_for_user,
+    get_accounts_for_user as _get_accounts_for_user,
+    get_user_settings as _get_user_settings,
 )
 from backend.lib.budget import spending_money_summary
 from backend.services import budget as budget_service
@@ -84,7 +86,7 @@ async def spending_money(user_id: int = Depends(get_current_user)):
     income = _get_income_for_user(user_id)
     expenses = _get_expenses_for_user(user_id)
     lines = budget_service.list_budget_lines(user_id)
-    return spending_money_summary(income, expenses, lines)
+    return spending_money_summary(income, expenses, lines, _get_accounts_for_user(user_id), _get_user_settings(user_id))
 
 
 def _build_estimate_prompt(zip_code: str, household_size: int | None, expense_names: list[str]) -> str:

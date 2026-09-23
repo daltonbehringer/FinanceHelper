@@ -90,7 +90,7 @@ def test_snapshot_create_event_has_positive_delta_for_income(client, user_a):
 
 
 def test_payment_due_advance_shares_correlation_id(client, user_a):
-    acct = make_account(user_a, type="credit_card", balance=1000, due_date="2020-01-15")
+    acct = make_account(user_a, type="credit_card", balance=1000, minimum_payment=200, due_date="2020-01-15")
     client.post("/api/snapshots", json={"account_id": acct, "balance": 800, "payment_made": 200})
 
     events = _events(user_a)

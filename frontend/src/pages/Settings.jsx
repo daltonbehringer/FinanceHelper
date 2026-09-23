@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 import { dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useSettings } from '../hooks/useSettings'
+import { useBudgetLines } from '../hooks/useBudgetLines'
 import { useAccounts } from '../hooks/useAccounts'
 import { useToast } from '../context/ToastContext'
 import Card, { CardHeader, CardBody } from '../components/ui/Card'
@@ -13,19 +14,23 @@ import BudgetEditor from '../components/settings/BudgetEditor'
 export default function Settings() {
   const { settings, loading, refetch } = useSettings()
   const { accounts, loading: accountsLoading } = useAccounts()
+  const { lines: budgetLines, refetch: refetchBudgetLines } = useBudgetLines()
   const { showToast } = useToast()
   const [minChecking, setMinChecking] = useState('')
+  const [cashCushion, setCashCushion] = useState('')
   const [defaultPaymentAccountId, setDefaultPaymentAccountId] = useState('')
   const [advicePosture, setAdvicePosture] = useState('default')
   const [zipCode, setZipCode] = useState('')
   const [householdSize, setHouseholdSize] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const checkingAccounts = accounts.filter(a => a.type === 'checking')
 
   useEffect(() => {
     if (!loading) {
-      setMinChecking(settings.min_checking ? centsToDollarInput(settings.min_checking) : '')
+      setCashCushion(centsToDollarInput(settings.cash_cushion ?? 0))
+      setMinChecking(settings.living_budget_configured || settings.min_checking > 0 ? centsToDollarInput(settings.min_checking ?? 0) : '')
       setDefaultPaymentAccountId(
         settings.default_payment_account_id ? String(settings.default_payment_account_id) : ''
       )
@@ -33,13 +38,15 @@ export default function Settings() {
       setZipCode(settings.zip_code || '')
       setHouseholdSize(settings.household_size != null ? String(settings.household_size) : '')
     }
-  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size])
+  }, [loading, settings.min_checking, settings.default_payment_account_id, settings.advice_posture, settings.zip_code, settings.household_size, settings.cash_cushion, settings.living_budget_configured])
 
   async function handleSave(e) {
     e.preventDefault()
+    setSaveError('')
     const value = dollarsToCents(minChecking) ?? 0
-    if (value < 0) {
-      showToast('Minimum balance cannot be negative', 'error')
+    const cushion = dollarsToCents(cashCushion) ?? 0
+    if (value < 0 || cushion < 0) {
+      showToast('Budget and cushion cannot be negative', 'error')
       return
     }
     const paymentId = defaultPaymentAccountId ? Number(defaultPaymentAccountId) : 0
@@ -48,7 +55,8 @@ export default function Settings() {
       const resp = await apiFetch('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
-          min_checking: value,
+          ...(minChecking !== '' ? { min_checking: value } : {}),
+          cash_cushion: cushion,
           default_payment_account_id: paymentId,
           advice_posture: advicePosture,
           zip_code: zipCode.trim(),
@@ -59,10 +67,11 @@ export default function Settings() {
         showToast('Settings saved', 'success')
         refetch()
       } else {
-        showToast('Failed to save settings', 'error')
+        const error = await resp?.json().catch(() => null)
+        setSaveError(typeof error?.detail === 'string' ? error.detail : 'Failed to save settings')
       }
     } catch {
-      showToast('Failed to save settings', 'error')
+      setSaveError('Failed to save settings')
     } finally {
       setSaving(false)
     }
@@ -146,17 +155,18 @@ export default function Settings() {
 
         <Card>
           <CardHeader>
-            <h2 className="text-base font-semibold text-text">Monthly Spending Money</h2>
+            <h2 className="text-base font-semibold text-text">Living costs and cash cushion</h2>
           </CardHeader>
           <CardBody>
             <p className="text-sm text-text-muted mb-4">
-              How much you keep available each month for everyday variable expenses — groceries,
-              gas, transportation, and the like. The advisor reserves this for you: it won't
-              recommend debt or savings that dip into it, and it plans so your "safe to spend"
-              (balance minus upcoming bills) stays at or above this amount.
+              Safe to spend covers unpaid bills and everyday living costs until payday.
+              Set a monthly total here if you do not use the detailed budget below.
+              When budget lines exist, their total replaces this fallback; they are never added together.
             </p>
             <Input
-              label="Monthly spending money"
+              label="Fallback monthly living costs"
+              required={budgetLines.length === 0}
+              disabled={budgetLines.length > 0}
               type="number"
               min="0"
               step="0.01"
@@ -165,6 +175,16 @@ export default function Settings() {
               onChange={(e) => setMinChecking(e.target.value)}
               className="flex-1 sm:max-w-xs"
             />
+            <Input
+              label="Minimum cash cushion"
+              type="number" min="0" step="0.01"
+              value={cashCushion} onChange={(e) => setCashCushion(e.target.value)}
+              className="mt-4 sm:max-w-xs"
+              aria-describedby="cash-cushion-help"
+            />
+            <p id="cash-cushion-help" className="mt-2 text-sm text-text-muted text-pretty">
+              Money to leave untouched after payments and living costs. Set zero to use a $0 floor.
+            </p>
           </CardBody>
         </Card>
 
@@ -175,9 +195,9 @@ export default function Settings() {
           <CardBody className="space-y-5">
             <p className="text-sm text-text-muted">
               Your ZIP code and household size let the advisor seed metro-level monthly spending
-              estimates. These are starting points — adjust them to your situation. Together with
-              your income and recurring bills they produce your <span className="font-medium">monthly
-              spending money</span>.
+              estimates. Adjust them to your situation and exclude bills already tracked in Expenses or Accounts. Together with
+              your income and recurring bills they produce your <span className="font-medium">projected
+              monthly surplus</span>.
             </p>
             <div className="grid grid-cols-2 gap-4 sm:max-w-xs">
               <Input
@@ -196,10 +216,11 @@ export default function Settings() {
                 placeholder="e.g. 2"
               />
             </div>
-            <BudgetEditor zip={zipCode.trim()} householdSize={householdSize} showToast={showToast} />
+            <BudgetEditor lines={budgetLines} refetch={refetchBudgetLines} zip={zipCode.trim()} householdSize={householdSize} showToast={showToast} />
           </CardBody>
         </Card>
 
+        {saveError && <p role="alert" className="text-sm text-debit">{saveError}</p>}
         <div className="flex justify-end">
           <Button type="submit" disabled={saving}>
             {saving ? 'Saving...' : 'Save Settings'}

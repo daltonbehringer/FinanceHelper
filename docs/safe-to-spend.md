@@ -1,0 +1,94 @@
+# Cash available until payday
+
+“Safe to spend” is optional spending or a transfer to savings that leaves enough
+checking cash for known payments, estimated living costs, and a chosen cushion.
+It is calculated in integer cents by `backend/lib/reserves.py`. The dashboard and
+advisor use the same inputs and calculation. No LLM arithmetic is involved.
+
+```
+selected checking cash
+- unpaid account payments due through payday
+- unpaid expenses due through payday
+- estimated living costs until payday
+- cash cushion
+= projected cash above the floor
+```
+
+The headline is `max(0, projected_balance)`. A negative projection is shown as a
+shortfall. Missing required inputs produce `available: null`, `complete: false`,
+and actionable `issues`; an incomplete estimate must not be presented as free cash.
+The expandable dashboard breakdown shows each deduction and dated obligation.
+
+## Boundaries and inputs
+
+- Use the active default payment checking account, or all active checking accounts
+  when no default is selected. Savings, investments, and credit limits are excluded.
+  Included accounts are returned explicitly. Combined balances assume money can be
+  transferred between those accounts as needed; this is not a per-bank overdraft simulation.
+- The next expected positive paycheck across active income sources ends the window.
+  Receipts on the same date are summed for display, but never added to current cash.
+  Include bills due on payday because their debits might precede the deposit.
+- Monthly debt payments use `minimum_payment` and the next unpaid `due_date`.
+  Partial payments persist `payment_remaining`. A full required payment advances
+  one occurrence, not straight past today. Extra payments reduce principal rather
+  than implicitly satisfying future installments. A zero/credit debt balance has
+  no payment reserve; a missing required amount or date needs correction.
+- Recurring expenses have a persisted `next_due_date`. It advances one month when
+  paid. Unpaid overdue occurrences remain due, including multiple cycles before
+  payday. One-time expenses use `due_date` and deactivate when paid.
+- An expense's explicit `linked_account_id` marks a duplicate debt payment. Count
+  the account's amount/date once, and record payment from Accounts. Name matching
+  never silently merges financial obligations. Other duplicates need user review.
+- Detailed Settings budget lines are monthly living costs not already tracked as
+  bills. They replace the fallback monthly living-cost amount (`min_checking`, kept
+  as the API/storage name for compatibility). Never sum both. A saved zero fallback
+  or zero-valued budget line explicitly means no living-cost reserve.
+- Living costs use the days in `[today, payday)`, prorated by each calendar month's
+  actual length. If payday is today, reserve one day's living costs. Accumulate exact
+  fractions, then round up to the next cent. This is an estimate of future costs,
+  not transaction-level budget tracking.
+- `cash_cushion` is a separate nonnegative fixed reserve, default zero. It is not a
+  monthly expense. The advisor's payment previews recompute the plan after the cash
+  deduction and release the paid obligation, avoiding double subtraction.
+- Bills after payday are excluded. This figure does not guarantee later pay periods
+  are funded. Longer-term planning uses the monthly forecast separately.
+
+## Pay schedules and monthly forecast
+
+Weekly/biweekly dates use the last recorded receipt as their cadence anchor.
+Monthly income has a calendar pay day (31 means month end), which stays fixed when
+February is shorter. Semimonthly requires two calendar days, such as 15 and 31;
+it is not “every 15 days.” A receipt expected today stays in the window until the
+last-pay date is updated. Schedules do not guess holiday/weekend adjustments.
+
+“Projected monthly surplus” is average monthly income minus recurring expenses,
+required debt payments, and the same living-cost budget. Linked expenses are excluded
+from recurring expenses. This forecast excludes one-time expenses and does not measure
+cash available now or actual spending remaining this month.
+
+## Existing data and rollout
+
+`init_db()` adds planning columns and widens the income calendar-day constraint
+idempotently. Existing monetary values and historical events are preserved.
+Positive legacy `min_checking` values become an explicit fallback living budget;
+the new cash cushion starts at zero. Detailed budget lines take priority.
+
+Legacy expenses with a last-paid date initially treat that payment as covering the
+payment month's occurrence. Otherwise they start with the current month's due day.
+The old schema cannot identify exactly which occurrence an early/late payment covered,
+or reconstruct older unrecorded arrears. Review the editable “Next unpaid due date”
+on existing expenses after rollout. Existing account due dates are retained as the
+next unpaid dates. Existing semimonthly income needs its two pay days filled in.
+Existing monthly pay days are retained or inferred from the last receipt; correct
+that day if the last receipt had been shifted by a holiday or short month.
+
+Balances and payment records must be current. Recording a payment without a funding
+source does not update checking; update its balance separately in that case.
+
+## Verification
+
+- `pytest` covers exact cash plans, shortfalls, missing inputs, paid/overdue cycles,
+  partial payments, calendar boundaries, duplicate links, ownership, migrations,
+  and advisor projections. Paid API evals remain excluded.
+- `cd frontend && npm run test:e2e` covers form submissions and the dashboard's
+  complete, incomplete, and shortfall states with mocked API responses.

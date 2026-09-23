@@ -3,11 +3,23 @@
 from fastapi import HTTPException
 
 from backend.db import get_db
-from backend.lib.dates import utc_now_iso
+from backend.lib.dates import utc_now_iso, parse_date
 from backend.services._core import EventContext, diff_changes, log_event, with_correlation
 
 
+def _validate_schedule(data):
+    first, second = data.get("income_day"), data.get("second_income_day")
+    if data.get("frequency") == "semimonthly" and first and second and first >= second:
+        raise HTTPException(status_code=422, detail="Second pay day must be after the first")
+
+
 def create_income(user_id: int, data: dict, ctx: EventContext) -> dict:
+    data = dict(data)
+    if data["frequency"] == "monthly" and data.get("income_day") is None:
+        paid = parse_date(data.get("last_pay_date"))
+        if paid:
+            data["income_day"] = paid.day
+    _validate_schedule(data)
     ctx = with_correlation(ctx)
     conn = get_db()
     try:
@@ -15,11 +27,11 @@ def create_income(user_id: int, data: dict, ctx: EventContext) -> dict:
             cur = conn.execute(
                 """
                 INSERT INTO recurring_income (user_id, name, amount, frequency,
-                                              income_day, last_pay_date, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                              income_day, last_pay_date, created_at, second_income_day)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (user_id, data["name"], data["amount"], data["frequency"],
-                 data.get("income_day"), data.get("last_pay_date"), utc_now_iso()),
+                 data.get("income_day"), data.get("last_pay_date"), utc_now_iso(), data.get("second_income_day")),
             )
             row = dict(conn.execute(
                 "SELECT * FROM recurring_income WHERE id = ?", (cur.lastrowid,)
@@ -48,6 +60,13 @@ def update_income(user_id: int, income_id: int, updates: dict, ctx: EventContext
             if not row:
                 raise HTTPException(status_code=404, detail="Income not found")
             old = dict(row)
+            updates = dict(updates)
+            merged = old | updates
+            if merged["frequency"] == "monthly" and merged.get("income_day") is None:
+                paid = parse_date(old.get("last_pay_date") or merged.get("last_pay_date"))
+                if paid:
+                    updates["income_day"] = paid.day
+            _validate_schedule(old | updates)
 
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             conn.execute(

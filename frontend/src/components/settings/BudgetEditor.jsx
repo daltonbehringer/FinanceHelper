@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { centsToDollarInput, dollarsToCents, formatMoney, formatType } from '../../lib/utils'
-import { useBudgetLines } from '../../hooks/useBudgetLines'
 import { useSpendingMoney } from '../../hooks/useSpendingMoney'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
@@ -9,15 +8,14 @@ import Badge from '../ui/Badge'
 
 /**
  * Budget-lines editor for Settings. Lines are untracked variable-spending
- * estimates that feed the deterministic Monthly Spending Money number. The
+ * estimates that feed the projected monthly surplus. The
  * "Estimate from my area" button seeds metro-level averages (origin badge =
  * "LLM est"); any edit flips a line to "You" and protects it from re-estimation.
  *
  * `zip` and `householdSize` come from the parent Settings form so an estimate
  * can run against unsaved values.
  */
-export default function BudgetEditor({ zip, householdSize, showToast }) {
-  const { lines, refetch } = useBudgetLines()
+export default function BudgetEditor({ zip, householdSize, showToast, lines, refetch }) {
   const { summary, refetch: refetchSummary } = useSpendingMoney()
   const [newCategory, setNewCategory] = useState('')
   const [newAmount, setNewAmount] = useState('')
@@ -80,7 +78,7 @@ export default function BudgetEditor({ zip, householdSize, showToast }) {
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-text-muted">
           Estimated monthly spending for untracked, variable costs. Don't duplicate bills you
-          already track as recurring expenses.
+          already track in Expenses or Accounts.
         </p>
         <Button type="button" variant="outline" size="sm" onClick={estimate} loading={estimating}>
           Estimate from my area
@@ -93,6 +91,7 @@ export default function BudgetEditor({ zip, householdSize, showToast }) {
             <div key={line.id} className="flex items-center gap-2">
               <Input
                 className="flex-1"
+                aria-label={`Budget category: ${line.category}`}
                 defaultValue={formatType(line.category)}
                 onBlur={(e) => {
                   const v = e.target.value.trim()
@@ -101,6 +100,7 @@ export default function BudgetEditor({ zip, householdSize, showToast }) {
               />
               <Input
                 className="w-28"
+                aria-label={`Monthly amount for ${line.category}`}
                 type="number"
                 min="0"
                 step="0.01"
@@ -139,6 +139,7 @@ export default function BudgetEditor({ zip, householdSize, showToast }) {
         />
         <Input
           className="w-28"
+          aria-label="New monthly budget amount"
           type="number"
           min="0"
           step="0.01"
@@ -160,8 +161,13 @@ export default function BudgetEditor({ zip, householdSize, showToast }) {
             <span className="text-text-muted">− Budgeted variable spending</span>
             <span className="tnum text-text">{formatMoney(summary.budget_total)}</span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-text-muted">− Required debt payments</span>
+            <span className="tnum">{formatMoney(summary.monthly_debt_payments)}</span>
+          </div>
+          {summary.issues?.map((issue) => <p key={issue} className="text-warning">{issue}</p>)}
           <div className="flex justify-between border-t border-border pt-1 font-semibold">
-            <span className="text-text">Monthly spending money</span>
+            <span className="text-text">Projected monthly surplus</span>
             <span className={`tnum ${summary.spending_money >= 0 ? 'text-credit' : 'text-debit'}`}>
               {formatMoney(summary.spending_money)}
             </span>

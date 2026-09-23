@@ -31,36 +31,100 @@ def advance_year(d: date) -> date:
     return d.replace(year=y, day=min(d.day, last_day))
 
 
-def next_payday(last_pay_date: str | None, frequency: str) -> str | None:
-    """Compute the next payday from last_pay_date and frequency.
-
-    Returns an ISO date string strictly after today, or None if last_pay_date
-    is missing/malformed. Monthly/annual advancement clamps at month end.
-    """
-    if not last_pay_date:
-        return None
+def parse_date(value) -> date | None:
     try:
-        d = date.fromisoformat(last_pay_date.split("T")[0])
+        return date.fromisoformat(value.split("T")[0]) if value else None
     except (ValueError, AttributeError):
         return None
-    today = date.today()
 
-    def advance(dt: date) -> date:
-        if frequency == "weekly":
-            return dt + timedelta(days=7)
-        elif frequency == "biweekly":
-            return dt + timedelta(days=14)
-        elif frequency == "semimonthly":
-            return dt + timedelta(days=15)
-        elif frequency == "monthly":
-            return advance_month(dt)
-        elif frequency == "annual":
-            return advance_year(dt)
-        return dt + timedelta(days=30)
 
-    while d <= today:
-        d = advance(d)
-    return d.isoformat()
+def month_date(year: int, month: int, day: int) -> date:
+    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+
+def next_payday(last_pay_date: str | None, frequency: str, today: date | None = None,
+                income_day: int | None = None, second_income_day: int | None = None) -> str | None:
+    """Next expected receipt, including today unless today's receipt is recorded.
+
+    Monthly dates retain their original day across short months. Semimonthly
+    requires two explicit calendar days (31 means month end); no 15-day guess.
+    """
+    today = today or date.today()
+    anchor = parse_date(last_pay_date)
+    after = max(today, anchor + timedelta(days=1)) if anchor else today
+    if frequency in {"weekly", "biweekly"}:
+        if not anchor:
+            return None
+        step = 7 if frequency == "weekly" else 14
+        count = max(1, ((after - anchor).days + step - 1) // step)
+        return (anchor + timedelta(days=count * step)).isoformat()
+    if frequency == "annual":
+        if not anchor:
+            return None
+        candidate = month_date(after.year, anchor.month, anchor.day)
+        if candidate < after:
+            candidate = month_date(after.year + 1, anchor.month, anchor.day)
+        return candidate.isoformat()
+    if frequency == "semimonthly":
+        if not income_day or not second_income_day or income_day >= second_income_day:
+            return None
+        days = [income_day, second_income_day]
+    elif frequency == "monthly":
+        day = income_day or (anchor.day if anchor else None)
+        if not day:
+            return None
+        days = [day]
+    else:
+        return None
+    first = after.replace(day=1)
+    for month in (first, advance_month(first)):
+        for day in days:
+            candidate = month_date(month.year, month.month, day)
+            if candidate >= after:
+                return candidate.isoformat()
+    return None
+
+
+def expense_due_date(expense: dict, today: date) -> date | None:
+    """Next unpaid occurrence. Persisted dates never roll forward with time.
+
+    Legacy rows without a persisted occurrence start in the current month; a
+    recorded payment covers that payment month's occurrence, including early or
+    late payments. Older arrears cannot be inferred from last_paid_date alone.
+    """
+    if not expense.get("is_recurring", 1):
+        return parse_date(expense.get("due_date"))
+    saved = parse_date(expense.get("next_due_date"))
+    if saved:
+        return saved
+    day = expense.get("due_day")
+    if not day:
+        return None
+    paid = parse_date(expense.get("last_paid_date"))
+    if paid:
+        return advance_month(month_date(paid.year, paid.month, day))
+    return month_date(today.year, today.month, day)
+
+
+def debt_payment_state(account: dict, payment: int) -> dict:
+    """Track the unpaid part of one required payment; extra pays principal.
+
+    Never erase overdue cycles by advancing straight past today.
+    """
+    if payment <= 0:
+        return {}
+    due = parse_date(account.get("due_date"))
+    if not due:
+        return {}
+    required = account.get("payment_remaining")
+    if required is None:
+        required = account.get("minimum_payment")
+    if required is None or required <= 0:
+        # A payment alone cannot establish an unknown required installment.
+        return {}
+    if payment < required:
+        return {"payment_remaining": required - payment}
+    return {"due_date": advance_month(due).isoformat(), "payment_remaining": None}
 
 
 def next_expense_due(due_day: int | None, due_date: str | None, is_recurring: int) -> str | None:

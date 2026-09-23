@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 class SettingsUpdate(BaseModel):
     min_checking: Optional[StrictInt] = None  # integer cents; floats are rejected
+    cash_cushion: Optional[StrictInt] = None
     default_payment_account_id: Optional[int] = None
     advice_posture: Optional[str] = None
     zip_code: Optional[str] = None
@@ -50,6 +51,7 @@ async def update_settings(body: SettingsUpdate, user_id: int = Depends(get_curre
     settings_service.update_settings(
         user_id,
         min_checking=body.min_checking,
+        cash_cushion=body.cash_cushion,
         default_payment_account_id=body.default_payment_account_id,
         advice_posture=body.advice_posture,
         zip_code=body.zip_code,

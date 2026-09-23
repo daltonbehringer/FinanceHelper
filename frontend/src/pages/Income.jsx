@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/api'
-import { formatMoney, formatDate, formatFrequency, monthlyEquiv, nextPayday, dollarsToCents, centsToDollarInput } from '../lib/utils'
+import { formatMoney, formatDate, formatFrequency, monthlyEquiv, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useIncome } from '../hooks/useIncome'
 import { useCrudPage } from '../hooks/useCrudPage'
 import { FREQUENCIES } from '../lib/constants'
@@ -9,7 +9,7 @@ import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
 import EntityPage, { isInactive } from '../components/crud/EntityPage'
 
-const EMPTY_FORM = { name: '', amount: '', frequency: 'monthly', income_day: '', last_pay_date: '' }
+const EMPTY_FORM = { name: '', amount: '', frequency: 'monthly', income_day: '', second_income_day: '', last_pay_date: '' }
 
 function freqBadgeColor(frequency) {
   return { weekly: 'purple', biweekly: 'blue', semimonthly: 'blue', monthly: 'green', annual: 'yellow' }[frequency] || 'gray'
@@ -22,7 +22,7 @@ function getSortValue(item, key) {
     case 'name': return (item.name || '').toLowerCase()
     case 'amount': return item.amount ?? 0
     case 'frequency': return FREQ_ORDER[item.frequency] ?? 99
-    case 'next_payday': return nextPayday(item.last_pay_date, item.frequency)
+    case 'next_payday': return formatDate(item.next_payday)
     case 'last_paid': return item.last_pay_date || ''
     case 'monthly_equiv': return monthlyEquiv(item.amount, item.frequency)
     default: return ''
@@ -41,7 +41,12 @@ function IncomeForm({ form, setForm, onSubmit, onCancel, loading, submitLabel })
       <Select label="Frequency *" name="frequency" value={form.frequency} onChange={handleChange} required>
         {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
       </Select>
-      <Input label="Pay Day" name="income_day" type="number" min="1" max="28" value={form.income_day} onChange={handleChange} placeholder="1-28" />
+      <Input label={form.frequency === 'semimonthly' ? 'First pay day (1–30)' : 'Pay day (31 = month end)'} required={form.frequency === 'semimonthly'} name="income_day" type="number" min="1" max={form.frequency === 'semimonthly' ? '30' : '31'} value={form.income_day} onChange={handleChange} placeholder="Day of month" />
+      {form.frequency === 'semimonthly' && (
+        <Input label="Second pay day (31 = month end)" name="second_income_day" type="number"
+          min={Number(form.income_day || 0) + 1} max="31" required
+          value={form.second_income_day} onChange={handleChange} />
+      )}
       <Input label="Last Pay Date" name="last_pay_date" type="date" value={form.last_pay_date} onChange={handleChange} />
       <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-3 pt-2">
         <Button type="submit" loading={loading}>{submitLabel}</Button>
@@ -53,7 +58,7 @@ function IncomeForm({ form, setForm, onSubmit, onCancel, loading, submitLabel })
 
 function MobileRow({ item, actions }) {
   const inactive = isInactive(item)
-  const next = nextPayday(item.last_pay_date, item.frequency)
+  const next = formatDate(item.next_payday)
   return (
     <div className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}>
       <div className="min-w-0 flex-1">
@@ -74,7 +79,8 @@ function MobileRow({ item, actions }) {
 
 function buildPayload(form) {
   const payload = { name: form.name.trim(), amount: dollarsToCents(form.amount) ?? 0, frequency: form.frequency }
-  if (form.income_day !== '') payload.income_day = parseInt(form.income_day, 10)
+  payload.income_day = form.income_day ? parseInt(form.income_day, 10) : null
+  payload.second_income_day = form.frequency === 'semimonthly' && form.second_income_day ? parseInt(form.second_income_day, 10) : null
   if (form.last_pay_date) payload.last_pay_date = form.last_pay_date
   return payload
 }
@@ -93,6 +99,7 @@ export default function Income() {
       amount: centsToDollarInput(item.amount),
       frequency: item.frequency || 'monthly',
       income_day: item.income_day ?? '',
+      second_income_day: item.second_income_day ?? '',
       last_pay_date: item.last_pay_date || '',
     }),
     getSortValue,
@@ -120,7 +127,7 @@ export default function Income() {
     { key: 'name', label: 'Name', headerClass: 'w-[18%]', cellClass: 'font-medium text-text truncate', render: (i) => (<>{i.name}{isInactive(i) && <Badge color="gray" className="ml-2">Inactive</Badge>}</>) },
     { key: 'amount', label: 'Amount', align: 'right', headerClass: 'w-[14%]', cellClass: 'font-medium text-text tnum truncate', render: (i) => formatMoney(i.amount) },
     { key: 'frequency', label: 'Frequency', headerClass: 'w-[14%]', render: (i) => <Badge color={freqBadgeColor(i.frequency)}>{formatFrequency(i.frequency)}</Badge> },
-    { key: 'next_payday', label: 'Next Payday', headerClass: 'w-[14%]', cellClass: 'font-bold text-credit truncate', render: (i) => nextPayday(i.last_pay_date, i.frequency) },
+    { key: 'next_payday', label: 'Next Payday', headerClass: 'w-[14%]', cellClass: 'font-bold text-credit truncate', render: (i) => formatDate(i.next_payday) },
     { key: 'last_paid', label: 'Last Paid', hide: 'lg', headerClass: 'w-[14%]', cellClass: 'text-text-muted truncate', render: (i) => formatDate(i.last_pay_date) },
     { key: 'monthly_equiv', label: 'Monthly Equiv', align: 'right', hide: 'lg', headerClass: 'w-[14%]', cellClass: 'font-medium text-credit tnum truncate', render: (i) => formatMoney(monthlyEquiv(i.amount, i.frequency)) },
   ]

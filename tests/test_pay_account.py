@@ -59,9 +59,9 @@ def test_pay_account_events_share_correlation_and_signed_delta(temp_db, user_a):
 
 
 def test_pay_account_advances_debt_due_date(temp_db, user_a):
-    # Due date in the past relative to today → should advance past today.
+    # One payment covers one overdue installment, not all past-due installments.
     past_due = date(date.today().year - 1, 1, 15).isoformat()
-    card = make_account(user_a, name="Loan", type="loan", balance=100000, due_date=past_due)
+    card = make_account(user_a, name="Loan", type="loan", balance=100000, minimum_payment=10000, due_date=past_due)
     checking = make_account(user_a, name="Checking", type="checking", balance=300000)
 
     accounts_service.pay_account(
@@ -69,7 +69,7 @@ def test_pay_account_advances_debt_due_date(temp_db, user_a):
     )
 
     row = fetchall("SELECT due_date FROM accounts WHERE id = ?", (card,))[0]
-    assert date.fromisoformat(row["due_date"]) > date.today()
+    assert date.fromisoformat(row["due_date"]) == date(date.today().year - 1, 2, 15)
 
 
 def test_pay_account_rejects_non_debt_target(temp_db, user_a):

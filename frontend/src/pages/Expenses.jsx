@@ -1,18 +1,18 @@
-import { useState } from 'react'
-import { formatMoney, formatDate, nextDueDate, dollarsToCents, centsToDollarInput } from '../lib/utils'
+import { useState, useId } from 'react'
+import { formatMoney, formatDate, isDebt, dollarsToCents, centsToDollarInput } from '../lib/utils'
 import { useExpenses } from '../hooks/useExpenses'
 import { useAccounts } from '../hooks/useAccounts'
 import { useSettings } from '../hooks/useSettings'
 import { useCrudPage } from '../hooks/useCrudPage'
 import { apiFetch } from '../lib/api'
 import Button from '../components/ui/Button'
-import Input from '../components/ui/Input'
+import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
 import PayModal from '../components/PayModal'
 import EntityPage, { isInactive } from '../components/crud/EntityPage'
 
-const EMPTY_FORM = { name: '', amount: '', category: '', isOneTime: false, due_day: '', due_date: '' }
+const EMPTY_FORM = { name: '', amount: '', category: '', isOneTime: false, due_day: '', due_date: '', next_due_date: '', linked_account_id: '' }
 
 const isRecurring = (e) => e.is_recurring === 1 || e.is_recurring === true
 
@@ -28,12 +28,15 @@ function getSortValue(item, key) {
 }
 
 function expenseDue(exp) {
-  if (isRecurring(exp)) return exp.due_day ? nextDueDate(exp.due_day, exp.last_paid_date) : '—'
+  if (isRecurring(exp)) return formatDate(exp.next_due_date)
   return exp.due_date ? formatDate(exp.due_date) : '—'
 }
 
-function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel }) {
-  const handleChange = (field, value) => setForm((prev) => ({ ...prev, [field]: value }))
+function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel, accounts = [] }) {
+  const helpId = useId()
+  const handleChange = (field, value) => setForm((prev) => ({ ...prev, [field]: value,
+    ...(['due_day', 'isOneTime'].includes(field) ? { next_due_date: '' } : {}),
+  }))
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit() }} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Input label="Name" value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder="e.g. Netflix, Rent" required />
@@ -44,6 +47,7 @@ function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel }) {
         <label className="flex items-center gap-2 cursor-pointer select-none pb-2">
           <div
             role="switch"
+            aria-label="One-time expense"
             aria-checked={form.isOneTime}
             tabIndex={0}
             onClick={() => handleChange('isOneTime', !form.isOneTime)}
@@ -61,6 +65,20 @@ function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel }) {
       ) : (
         <Input label="Due Day (1-28)" type="number" min="1" max="28" value={form.due_day} onChange={(e) => handleChange('due_day', e.target.value)} placeholder="e.g. 15" />
       )}
+
+      {!form.isOneTime && (
+        <Input label="Next unpaid due date" type="date" value={form.next_due_date}
+          onChange={(e) => handleChange('next_due_date', e.target.value)} />
+      )}
+      <Select label="Already tracked as an account payment" value={form.linked_account_id}
+        onChange={(e) => handleChange('linked_account_id', e.target.value)} aria-describedby={helpId}>
+        <option value="">No — count this expense separately</option>
+        {accounts.filter((a) => isDebt(a.type)).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+      </Select>
+      <p id={helpId} className="text-sm text-text-muted text-pretty">
+        Link duplicate loan, mortgage, or card payments to count them once. The account controls the amount
+        and due date; record its payments from Accounts. A blank next due date starts this month's cycle.
+      </p>
 
       <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
         <Button type="submit" loading={loading}>{submitLabel}</Button>
@@ -97,9 +115,11 @@ function buildPayload(form) {
     amount: dollarsToCents(form.amount),
     category: form.category.trim() || null,
     is_recurring: !form.isOneTime,
+    linked_account_id: form.linked_account_id ? Number(form.linked_account_id) : null,
   }
   if (form.isOneTime) { body.due_date = form.due_date || null; body.due_day = null }
   else { body.due_day = form.due_day ? parseInt(form.due_day, 10) : null; body.due_date = null }
+  body.next_due_date = !form.isOneTime && form.next_due_date ? form.next_due_date : null
   return body
 }
 
@@ -119,6 +139,8 @@ export default function Expenses() {
       isOneTime: exp.is_recurring === 0 || exp.is_recurring === false,
       due_day: exp.due_day != null ? String(exp.due_day) : '',
       due_date: exp.due_date || '',
+      next_due_date: exp.next_due_date || '',
+      linked_account_id: exp.linked_account_id ?? '',
     }),
     getSortValue,
     defaultSort: { col: 'due', dir: 'asc' },
@@ -158,7 +180,7 @@ export default function Expenses() {
   }
 
   const columns = [
-    { key: 'name', label: 'Name', headerClass: 'w-[25%]', cellClass: 'font-medium text-text truncate', render: (e) => e.name },
+    { key: 'name', label: 'Name', headerClass: 'w-[25%]', cellClass: 'font-medium text-text truncate', render: (e) => <>{e.name}{e.linked_account_id && <span className="block text-xs text-text-muted">Payment tracked in Accounts</span>}</> },
     { key: 'type', label: 'Type', headerClass: 'w-[15%]', render: (e) => <Badge color={isRecurring(e) ? 'green' : 'blue'}>{isRecurring(e) ? 'Recurring' : 'One-time'}</Badge> },
     { key: 'amount', label: 'Amount', align: 'right', headerClass: 'w-[15%]', cellClass: 'text-text tnum truncate', render: (e) => formatMoney(e.amount) },
     { key: 'due', label: 'Due', headerClass: 'w-[15%]', cellClass: 'text-text-muted truncate', render: expenseDue },
@@ -173,7 +195,7 @@ export default function Expenses() {
       addLabel="Add Expense"
       entityLabel="Expense"
       columns={columns}
-      extraActions={(exp) => [{ label: 'Pay', onClick: () => setPayTarget(exp) }]}
+      extraActions={(exp) => exp.linked_account_id ? [] : [{ label: 'Pay', onClick: () => setPayTarget(exp) }]}
       mobileSortOptions={[
         { value: 'due:asc', label: 'Sort: Due Date (soonest)' },
         { value: 'due:desc', label: 'Sort: Due Date (latest)' },
@@ -186,8 +208,8 @@ export default function Expenses() {
       ]}
       renderMobileRow={(e, actions) => <MobileRow key={e.id} expense={e} actions={actions} />}
       FormComponent={ExpenseForm}
-      addFormProps={{ form: crud.addForm, setForm: crud.setAddForm, onSubmit: crud.handleAdd, loading: crud.addLoading, submitLabel: 'Add Expense' }}
-      editFormProps={{ form: crud.editForm, setForm: crud.setEditForm, onSubmit: crud.handleEdit, loading: crud.editLoading, submitLabel: 'Save Changes' }}
+      addFormProps={{ accounts, form: crud.addForm, setForm: crud.setAddForm, onSubmit: crud.handleAdd, loading: crud.addLoading, submitLabel: 'Add Expense' }}
+      editFormProps={{ accounts, form: crud.editForm, setForm: crud.setEditForm, onSubmit: crud.handleEdit, loading: crud.editLoading, submitLabel: 'Save Changes' }}
       formTitles={{ add: 'New Expense', edit: 'Edit Expense' }}
       modalMaxWidth="max-w-lg"
       emptyTitle="No expenses yet"

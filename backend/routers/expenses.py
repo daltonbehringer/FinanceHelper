@@ -20,6 +20,8 @@ class ExpenseCreate(BaseModel):
     category: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     due_day: Optional[int] = None  # 1-28, optional for subscriptions
     is_recurring: bool = True
+    next_due_date: Optional[str] = None
+    linked_account_id: Optional[int] = None
     due_date: Optional[str] = None  # ISO date for one-time expenses
 
 
@@ -29,6 +31,8 @@ class ExpenseUpdate(BaseModel):
     category: Optional[str] = Field(default=None, max_length=MAX_TEXT)
     due_day: Optional[int] = None
     is_recurring: Optional[bool] = None
+    next_due_date: Optional[str] = None
+    linked_account_id: Optional[int] = None
     due_date: Optional[str] = None
 
 
@@ -62,7 +66,10 @@ async def create_expense(body: ExpenseCreate, user_id: int = Depends(get_current
 async def update_expense(
     expense_id: int, body: ExpenseUpdate, user_id: int = Depends(get_current_user)
 ):
-    updates = body.model_dump(exclude_none=True)
+    updates = body.model_dump(exclude_unset=True)
+    for key in ("name", "amount", "is_recurring"):
+        if key in updates and updates[key] is None:
+            raise HTTPException(status_code=422, detail=f"{key} cannot be null")
     if "due_day" in updates:
         _check_due_day(updates["due_day"])
     # SQLite stores booleans as integers
