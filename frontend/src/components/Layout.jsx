@@ -1,25 +1,38 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import '../styles/shell.css'
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('finance:sidebar-collapsed') === 'true' }
+    catch { return false }
+  })
+  const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 768px)')
+    const onResize = () => { if (desktop.matches) closeSidebar() }
+    desktop.addEventListener('change', onResize)
+    return () => desktop.removeEventListener('change', onResize)
+  }, [closeSidebar])
+
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    try { localStorage.setItem('finance:sidebar-collapsed', String(next)) }
+    catch { /* Navigation still works when browser storage is unavailable. */ }
+  }
 
   return (
-    <div className="min-h-screen flex bg-surface-sunken">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <div className="min-w-0 flex-1 flex flex-col min-h-screen md:ml-64">
-        <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
+    <div className={`app-shell${collapsed ? ' app-shell--collapsed' : ''}`}>
+      <a className="shell-skip-link" href="#main-content">Skip to content</a>
+      <Sidebar open={sidebarOpen} onClose={closeSidebar} collapsed={collapsed} />
+      <div className="shell-workspace">
+        <Header collapsed={collapsed} onCollapseToggle={toggleCollapsed}
+          sidebarOpen={sidebarOpen} onMenuToggle={() => setSidebarOpen(true)} />
+        <main id="main-content" tabIndex={-1} className="shell-content">
           {children}
         </main>
       </div>

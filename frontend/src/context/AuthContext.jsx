@@ -22,7 +22,9 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     // The server revokes the session and clears the HttpOnly cookie.
-    await apiFetch('/api/auth/logout', { method: 'POST' })
+    const response = await apiFetch('/api/auth/logout', { method: 'POST' })
+    if (!response) return // apiFetch already redirects an expired session.
+    if (!response.ok) throw new Error('Could not sign out')
     const apiBase = import.meta.env.VITE_API_BASE_URL || ''
     window.location.href = apiBase + '/api/auth/login'
   }

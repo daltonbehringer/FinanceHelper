@@ -1,58 +1,89 @@
-import { NavLink } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { Link, NavLink } from 'react-router-dom'
+import { navigationGroups } from '../lib/navigation'
 
-const navItems = [
-  { to: '/', label: 'Dashboard', icon: DashboardIcon },
-  { to: '/accounts', label: 'Accounts', icon: AccountsIcon },
-  { to: '/expenses', label: 'Expenses', icon: ExpensesIcon },
-  { to: '/income', label: 'Income', icon: IncomeIcon },
-  { to: '/chat', label: 'Chat', icon: AdvisorIcon },
-  { to: '/history', label: 'History', icon: HistoryIcon },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
-]
+const icons = {
+  '/': DashboardIcon, '/accounts': AccountsIcon, '/expenses': ExpensesIcon,
+  '/income': IncomeIcon, '/chat': AdvisorIcon, '/history': HistoryIcon, '/settings': SettingsIcon,
+}
 
-export default function Sidebar({ open, onClose }) {
-  return (
-    <aside
-      className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-navy flex flex-col
-        transform transition-transform duration-200 ease-in-out
-        ${open ? 'translate-x-0' : '-translate-x-full'}
-        md:translate-x-0
-      `}
-    >
-      <div className="h-16 flex items-center px-6 border-b border-navy-light">
-        <div className="flex items-center gap-3">
-          <img src="/favicon.png" alt="Finance AI" className="w-8 h-8 rounded-lg" />
-          <span className="text-white font-semibold text-lg">FinanceAI</span>
-        </div>
-      </div>
+export default function Sidebar({ open, onClose, collapsed }) {
+  const drawer = useRef(null)
 
-      <nav className="flex-1 py-4 px-3 space-y-1">
-        {navItems.map(item => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            onClick={onClose}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-              ${isActive
-                ? 'bg-accent text-white'
-                : 'text-text-muted hover:text-white hover:bg-navy-light'
-              }`
-            }
-          >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
+  function containTab(event) {
+    if (event.key !== 'Tab') return
+    const controls = [...drawer.current.querySelectorAll('a[href], button:not([disabled])')]
+    const first = controls[0]
+    const last = controls.at(-1)
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first?.focus()
+    }
+  }
 
-      <div className="p-4 border-t border-navy-light">
-        <p className="text-xs text-text-subtle text-center">Finance AI v1.2</p>
-      </div>
+  useEffect(() => {
+    if (!open) return
+    const dialog = drawer.current
+    const previousFocus = document.activeElement
+    const previousOverflow = document.body.style.overflow
+    dialog.showModal()
+    document.body.style.overflow = 'hidden'
+    return () => {
+      dialog.close()
+      document.body.style.overflow = previousOverflow
+      if (previousFocus?.isConnected && previousFocus.getClientRects().length) previousFocus.focus()
+    }
+  }, [open])
+
+  return <>
+    <aside id="desktop-navigation" className="shell-sidebar">
+      <Navigation collapsed={collapsed} />
     </aside>
-  )
+    <dialog id="mobile-navigation" className="shell-drawer" ref={drawer} aria-label="Main navigation"
+      onKeyDown={containTab}
+      onCancel={event => { event.preventDefault(); onClose() }}
+      onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="shell-drawer-panel">
+        <Navigation onNavigate={onClose} onClose={onClose} />
+      </div>
+    </dialog>
+  </>
+}
+
+function Navigation({ collapsed = false, onNavigate, onClose }) {
+  return <>
+    <div className="shell-brand-row">
+      <Link to="/" className="shell-brand" aria-label="FinanceAI home" onClick={onNavigate} title={collapsed ? 'FinanceAI home' : undefined}>
+        <svg className="shell-brand-mark" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="11" fill="currentColor" />
+          <path d="M11 25V11h14M11 18h10" stroke="#233326" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="25" cy="25" r="2" fill="#233326" />
+        </svg>
+        <span className="shell-brand-copy">Finance<span>AI</span><small>Your financial workspace</small></span>
+      </Link>
+      {onClose && <button type="button" className="shell-icon-button" aria-label="Close navigation" onClick={onClose}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path strokeLinecap="round" d="m6 6 12 12M6 18 18 6" /></svg>
+      </button>}
+    </div>
+    <nav className="shell-nav" aria-label="Main navigation">
+      {navigationGroups.map(group => <div key={group.label} className="shell-nav-group">
+        <p className="shell-nav-heading">{group.label}</p>
+        {group.items.map(item => {
+          const Icon = icons[item.to]
+          return <NavLink key={item.to} to={item.to} end={item.to === '/'} onClick={onNavigate}
+            title={collapsed ? item.label : undefined}
+            className={({ isActive }) => `shell-nav-link${isActive ? ' is-active' : ''}`}>
+            <Icon className="shell-nav-icon" aria-hidden="true" />
+            <span className="shell-nav-label">{item.label}</span>
+          </NavLink>
+        })}
+      </div>)}
+    </nav>
+    <div className="shell-sidebar-foot" aria-hidden="true"><span>Clarity for what’s next.</span><span className="shell-foot-mark">F.</span></div>
+  </>
 }
 
 function DashboardIcon(props) {
