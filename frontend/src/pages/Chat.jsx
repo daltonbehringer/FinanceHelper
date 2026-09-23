@@ -1,15 +1,17 @@
 import AdvisorChat from '../components/dashboard/AdvisorChat'
+import '../styles/journal.css'
 
 export default function Chat() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text">Chat</h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Ask questions, record payments, or update balances in plain language. Your full
-          history lives here — including anything you asked from the dashboard.
+    <div className="journal-page chat-page">
+      <header className="journal-header">
+        <p className="journal-kicker">A LITTLE PERSPECTIVE</p>
+        <h1>Chat.</h1>
+        <p className="journal-description">
+          Think through your next move. Ask a question, record a payment,
+          or update a balance in your own words.
         </p>
-      </div>
+      </header>
 
       <AdvisorChat variant="full" />
     </div>

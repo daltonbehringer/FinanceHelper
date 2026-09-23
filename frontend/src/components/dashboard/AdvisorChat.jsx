@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAdvisorChatContext } from '../../context/AdvisorChatContext'
 import { formatMoney } from '../../lib/utils'
-import Card, { CardHeader, CardBody } from '../ui/Card'
+import { Link } from 'react-router-dom'
 import Button from '../ui/Button'
 import Markdown from '../ui/Markdown'
 
@@ -23,7 +23,7 @@ function PreviewCard({ preview, busy, onConfirm, onCancel }) {
     record_balance_update: 'Confirm balance update',
   }[preview.tool] || 'Confirm balance update'
   return (
-    <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-4 space-y-3">
+    <div className="advisor-preview rounded-lg border border-warning/40 bg-warning/10 px-4 py-4 space-y-3">
       <h3 className="text-sm font-semibold text-text">{title}</h3>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -93,7 +93,7 @@ export default function AdvisorChat({ variant = 'full' }) {
     : thread
 
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    threadEndRef.current?.scrollIntoView({ behavior: 'instant', block: 'nearest' })
   }, [thread, pending])
 
   function autoResize() {
@@ -122,34 +122,50 @@ export default function AdvisorChat({ variant = 'full' }) {
     if (window.confirm('Clear the entire chat history?')) clear()
   }
 
+  const starters = [
+    { label: 'Plan my spending', prompt: 'How much can I safely spend before my next paycheck?' },
+    { label: 'Look at my debt', prompt: 'Which debt should I focus on paying down next, and why?' },
+    { label: 'Review upcoming bills', prompt: 'What payments do I need to plan for before my next paycheck?' },
+  ]
+
+  function draftPrompt(prompt) {
+    setText(prompt)
+    textareaRef.current?.focus()
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-text">Financial Advisor</h2>
+    <div className={compact ? 'advisor-layout advisor-compact' : 'advisor-layout'}>
+      <section className="journal-panel advisor-conversation" aria-label="Financial advisor">
+        <header className="advisor-header">
+          <div className="advisor-heading">
+            <span className="advisor-mark" aria-hidden="true">✳</span>
+            <div>
+              <p className="journal-kicker">FINANCIAL ADVISOR</p>
+              <h2>Your conversation</h2>
+            </div>
+          </div>
           {!compact && thread.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={handleClear} disabled={busy}>
-              Clear
-            </Button>
+            <Button variant="ghost" size="sm" onClick={handleClear} disabled={busy}>Clear</Button>
           )}
-        </div>
-      </CardHeader>
-      <CardBody className="space-y-4">
-        {(displayed.length > 0 || pending) && (
-          <div className={compact ? 'space-y-3' : 'space-y-3 max-h-[28rem] overflow-y-auto pr-1'}>
+        </header>
+
+        {displayed.length === 0 && !pending ? (
+          <div className="advisor-empty">
+            <p className="journal-kicker">LET’S THINK IT THROUGH</p>
+            <h3>More clarity.<br />A confident next step.</h3>
+            <p>Start with what is on your mind. Your advisor can help connect your balances, bills, and goals.</p>
+            <button type="button" className="journal-link" onClick={() => textareaRef.current?.focus()}>Start a conversation <span aria-hidden="true">↗</span></button>
+          </div>
+        ) : (
+          <div className="advisor-thread" role="log" aria-label="Conversation" aria-busy={busy} tabIndex={0}>
             {displayed.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
-                {m.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-2 text-sm text-white whitespace-pre-wrap">
-                    {m.content}
-                  </div>
-                ) : (
-                  <div className={`rounded-2xl rounded-bl-sm px-4 py-3 ${m.system ? 'bg-credit/10 border border-credit/30' : 'bg-surface-sunken border border-border'}`}>
-                    {m.system
-                      ? <p className="text-sm text-text">{m.content}</p>
-                      : <Markdown>{m.content || (m.streaming ? '…' : '')}</Markdown>}
-                  </div>
-                )}
+              <div key={i} className={`advisor-message ${m.role === 'user' ? 'advisor-message-user' : m.system ? 'advisor-message-system' : 'advisor-message-assistant'}`}>
+                <p className="advisor-speaker">{m.role === 'user' ? 'YOU' : m.system ? 'ACTIVITY UPDATE' : 'ADVISOR'}</p>
+                <div className="advisor-message-content">
+                  {m.role === 'user' || m.system
+                    ? <p>{m.content}</p>
+                    : <Markdown>{m.content || (m.streaming ? 'Thinking…' : '')}</Markdown>}
+                </div>
               </div>
             ))}
             {pending && (
@@ -159,30 +175,54 @@ export default function AdvisorChat({ variant = 'full' }) {
           </div>
         )}
 
-        {error && (
-          <div className="rounded-lg bg-debit/10 border border-debit/30 px-4 py-3 text-sm text-debit">
-            {error}
-          </div>
-        )}
-
-        <div className="space-y-3">
+        <div className="advisor-compose">
+          {error && <div id="advisor-error" className="advisor-error" role="alert">{error}</div>}
+          <label className="sr-only" htmlFor="advisor-message">Message your advisor</label>
           <textarea
+            id="advisor-message"
             ref={textareaRef}
             value={text}
             onChange={(e) => { setText(e.target.value); autoResize() }}
             onKeyDown={handleKeyDown}
-            placeholder="Record a payment, update a balance, or ask for advice…"
+            aria-describedby={error ? 'advisor-error advisor-keyboard-hint' : 'advisor-keyboard-hint'}
+            placeholder="Ask a question or describe an update…"
             rows={2}
             disabled={busy}
-            className="w-full resize-none rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-text placeholder-text-subtle focus:border-accent focus:ring-1 focus:ring-accent outline-none disabled:opacity-60"
           />
-          <div className="flex justify-end">
-            <Button onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>
-              Send
+          <div className="advisor-compose-footer">
+            <div>
+              <p role="status" className="advisor-status">{status === 'streaming' ? 'Your advisor is responding…' : status === 'confirming' ? 'Applying your change…' : pending ? 'Review the proposed change above.' : 'Ready when you are.'}</p>
+              <p id="advisor-keyboard-hint">Enter to send · Shift + Enter for a new line</p>
+            </div>
+            <Button className="advisor-send" onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>
+              Send <span aria-hidden="true">↗</span>
             </Button>
           </div>
         </div>
-      </CardBody>
-    </Card>
+      </section>
+
+      {!compact && (
+        <aside className="advisor-sidebar" aria-label="Conversation ideas">
+          <section className="advisor-starters">
+            <p className="journal-kicker">A PLACE TO BEGIN</p>
+            <h2>What’s on <br />your mind?</h2>
+            <p>Choose a starting point, then make it your own.</p>
+            {starters.map((starter, index) => (
+              <button key={starter.label} type="button" onClick={() => draftPrompt(starter.prompt)} disabled={busy}>
+                <span className="advisor-prompt-number" aria-hidden="true">0{index + 1}</span>
+                <span>{starter.label}</span><span aria-hidden="true">↗</span>
+              </button>
+            ))}
+          </section>
+          <section className="advisor-note">
+            <p className="journal-kicker">FROM WORDS TO ACTION</p>
+            <h3>You have the final say.</h3>
+            <p>Payments and balance updates appear as a proposal. Review the details, then confirm or cancel.</p>
+            <Link className="journal-link" to="/history">Review your activity <span aria-hidden="true">↗</span></Link>
+          </section>
+          <p className="advisor-sidebar-caption">Your conversation stays together as you move between pages.</p>
+        </aside>
+      )}
+    </div>
   )
 }

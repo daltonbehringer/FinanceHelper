@@ -80,11 +80,13 @@ export default function NetWorthChart({ series }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="inline-flex rounded-lg bg-surface-sunken p-0.5 border border-border">
+      <div className="history-chart-controls">
+        <div className="history-chart-selector" role="group" aria-label="Balance to chart">
           {SERIES.map(s => (
             <button
               key={s.key}
+              type="button"
+              aria-pressed={active === s.key}
               onClick={() => setActive(s.key)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 active === s.key ? 'bg-surface-raised text-text' : 'text-text-muted hover:text-text'
@@ -98,10 +100,12 @@ export default function NetWorthChart({ series }) {
             </button>
           ))}
         </div>
-        <div className="inline-flex rounded-lg bg-surface-sunken p-0.5 border border-border">
+        <div className="history-chart-selector" role="group" aria-label="Chart date range">
           {PRESETS.map(p => (
             <button
               key={p.key}
+              type="button"
+              aria-pressed={range === p.key}
               onClick={() => setRange(p.key)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 range === p.key ? 'bg-surface-raised text-text' : 'text-text-muted hover:text-text'
@@ -112,7 +116,7 @@ export default function NetWorthChart({ series }) {
           ))}
         </div>
       </div>
-      <div ref={ref} className="h-72 sm:h-80 w-full" />
+      <div ref={ref} className="h-72 sm:h-80 w-full" role="img" aria-label={`${meta.label} over time, ${range === 'All' ? 'all recorded dates' : `last ${range}`}. Latest recorded value: ${formatMoney(series[series.length - 1]?.[active] ?? 0)}.`} />
     </div>
   )
 }

@@ -1,24 +1,23 @@
 import echarts from './echarts'
 
-/* Chart palette — mirrors the `--color-chart-*` / surface tokens in index.css so
-   charts and UI share exact colors. Keep these hexes in sync with @theme. */
+/* History charts share the journal palette and the dashboard typography. */
 export const CHART = {
-  net: '#4f8cff',
-  assets: '#3fb950',
-  debts: '#f85149',
-  accent2: '#a371f7',
-  grid: '#1f2630',
-  axis: '#6e7b8a',
-  surface: '#161b22',
-  surfaceRaised: '#1d242e',
-  border: '#283039',
-  text: '#e6edf3',
-  textMuted: '#9aa7b4',
+  net: '#d4e2bf',
+  assets: '#93aec1',
+  debts: '#f3a390',
+  accent2: '#c9aa85',
+  grid: '#293431',
+  axis: '#a4ada9',
+  surface: '#171f21',
+  surfaceRaised: '#25302d',
+  border: '#303b39',
+  text: '#eaece5',
+  textMuted: '#a4ada9',
 }
 
 export const THEME_NAME = 'claudeFinance'
 
-const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+const FONT = "'Avenir Next', 'Trebuchet MS', sans-serif"
 
 let registered = false
 
@@ -53,9 +52,9 @@ export function ensureChartTheme() {
       textStyle: { color: CHART.text, fontFamily: FONT, fontSize: 12 },
       extraCssText: 'border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.45);',
     },
-    dataZoom: [{
+    dataZoom: {
       borderColor: CHART.border,
-      fillerColor: 'rgba(79,140,255,0.12)',
+      fillerColor: 'rgba(212,226,191,0.12)',
       handleStyle: { color: CHART.surfaceRaised, borderColor: CHART.axis },
       moveHandleStyle: { color: CHART.border },
       textStyle: { color: CHART.axis },
@@ -65,9 +64,9 @@ export function ensureChartTheme() {
       },
       selectedDataBackground: {
         lineStyle: { color: CHART.net },
-        areaStyle: { color: 'rgba(79,140,255,0.15)' },
+        areaStyle: { color: 'rgba(212,226,191,0.15)' },
       },
-    }],
+    },
   })
 
   registered = true

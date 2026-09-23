@@ -1,21 +1,13 @@
 import { useState, useMemo } from 'react'
-import { formatMoney } from '../lib/utils'
+import { Link } from 'react-router-dom'
+import { formatMoney, formatDate } from '../lib/utils'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useEvents } from '../hooks/useEvents'
-import Card, { CardHeader, CardBody } from '../components/ui/Card'
 import Spinner from '../components/ui/Spinner'
 import NetWorthChart from '../components/history/NetWorthChart'
 import CompositionChart from '../components/history/CompositionChart'
 import ActivityFeed from '../components/history/ActivityFeed'
-
-function Stat({ label, value, color = 'text-text' }) {
-  return (
-    <div>
-      <p className="text-2xs font-semibold uppercase tracking-wide text-text-subtle">{label}</p>
-      <p className={`text-lg sm:text-xl font-bold tnum ${color}`}>{value}</p>
-    </div>
-  )
-}
+import '../styles/journal.css'
 
 export default function History() {
   const [showAll, setShowAll] = useState(false)
@@ -31,70 +23,73 @@ export default function History() {
   }, [series])
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text">History</h1>
-        <p className="text-sm text-text-muted mt-1">
-          Net worth over time and a full log of every balance change.
-        </p>
-      </div>
+    <div className="journal-page history-page">
+      <header className="journal-header journal-header-row">
+        <div>
+          <p className="journal-kicker">THE BIGGER PICTURE</p>
+          <h1>History.</h1>
+          <p className="journal-description">Follow your balances over time, and the decisions that shaped them.</p>
+        </div>
+        <a className="journal-link" href="#activity">View activity <span aria-hidden="true">↓</span></a>
+      </header>
 
-      {/* Hero: net worth */}
-      <Card>
-        <CardBody>
-          {nwLoading ? (
-            <div className="flex justify-center py-20"><Spinner size="lg" className="text-accent" /></div>
-          ) : series.length === 0 ? (
-            <div className="py-16 text-center text-sm text-text-muted">
-              Add an account to start tracking your net worth.
+      {nwLoading ? (
+        <div className="journal-panel journal-loading" role="status" aria-label="Loading net worth">
+          <Spinner size="lg" />
+        </div>
+      ) : !summary ? (
+        <section className="journal-panel journal-empty">
+          <p className="journal-kicker">YOUR STORY STARTS HERE</p>
+          <h2>A picture that grows with you.</h2>
+          <p>Add an account to start tracking your net worth.</p>
+          <Link className="journal-link" to="/accounts">Go to accounts <span aria-hidden="true">↗</span></Link>
+        </section>
+      ) : (
+        <section className="history-overview" aria-label="Net worth history">
+          <div className="history-snapshot">
+            <p className="journal-kicker">LATEST NET WORTH</p>
+            <p className="history-net">{formatMoney(summary.net)}</p>
+            <p className="history-asof">As of {formatDate(summary.date)}</p>
+            <div className="history-change">
+              <strong>{summary.change == null ? 'First recorded day' : `${summary.change > 0 ? '+' : summary.change < 0 ? '−' : ''}${formatMoney(Math.abs(summary.change))}`}</strong>
+              <span>{summary.change == null ? 'Your starting point for the days ahead.' : 'Since the previous recorded day'}</span>
             </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wide text-text-subtle">Net worth</p>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold tnum text-text">{formatMoney(summary.net)}</p>
-                    {summary.change != null && summary.change !== 0 && (
-                      <span className={`text-sm font-semibold tnum ${summary.change > 0 ? 'text-credit' : 'text-debit'}`}>
-                        {summary.change > 0 ? '+' : '−'}{formatMoney(Math.abs(summary.change))}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-6">
-                  <Stat label="Assets" value={formatMoney(summary.assets)} color="text-credit" />
-                  <Stat label="Debts" value={formatMoney(summary.debts)} color="text-debit" />
-                </div>
-              </div>
-              <NetWorthChart series={series} />
-            </>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Secondary: composition */}
-      {!nwLoading && series.length > 1 && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-sm font-semibold text-text uppercase tracking-wide">Assets vs. Debts</h2>
-          </CardHeader>
-          <CardBody>
-            <CompositionChart series={series} />
-          </CardBody>
-        </Card>
+            <dl className="history-balances">
+              <div><dt>Total assets</dt><dd>{formatMoney(summary.assets)}</dd></div>
+              <div><dt>Total debt</dt><dd>{formatMoney(summary.debts)}</dd></div>
+            </dl>
+            <p className="history-snapshot-note">Assets minus debt, based on your recorded balances.</p>
+          </div>
+          <div className="journal-panel history-trend">
+            <div className="journal-section-heading">
+              <div><p className="journal-kicker">OVER TIME</p><h2>Your financial trajectory</h2></div>
+            </div>
+            <NetWorthChart series={series} />
+            <p className="journal-caption">Choose a balance and date range, or drag the slider to explore.</p>
+          </div>
+        </section>
       )}
 
-      {/* Activity feed */}
-      <ActivityFeed
-        events={events}
-        loading={evLoading}
-        loadingMore={loadingMore}
-        hasMore={hasMore}
-        onLoadMore={loadMore}
-        showAll={showAll}
-        onToggleShowAll={() => setShowAll(s => !s)}
-      />
+      <div className={`history-details ${!nwLoading && series.length > 1 ? 'history-details-with-chart' : ''}`}>
+        <ActivityFeed
+          events={events}
+          loading={evLoading}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
+          onLoadMore={loadMore}
+          showAll={showAll}
+          onToggleShowAll={() => setShowAll(s => !s)}
+        />
+        {!nwLoading && series.length > 1 && (
+          <section className="journal-panel history-composition" aria-label="Assets and debts over time">
+            <div className="journal-section-heading">
+              <div><p className="journal-kicker">BOTH SIDES OF THE BALANCE</p><h2>Assets &amp; debts</h2></div>
+            </div>
+            <CompositionChart series={series} />
+            <p className="journal-caption">The makeup of your recorded balances over time. Select a legend item to show or hide it.</p>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

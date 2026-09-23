@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { formatMoney, formatDateTime, timeAgo } from '../../lib/utils'
 import {
   groupEvents, primaryEvent, actionLabel, entityName, groupTime, isLlm,
@@ -42,25 +42,29 @@ function ChangeList({ changes }) {
 
 function FeedRow({ group }) {
   const [open, setOpen] = useState(false)
+  const detailId = useId()
   const primary = primaryEvent(group)
   const time = groupTime(group)
   const llm = isLlm(group)
   const multi = group.events.length > 1
 
   return (
-    <div className="border-b border-border last:border-0">
+    <div className="activity-row">
       <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={open ? detailId : undefined}
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-4 sm:px-5 py-3 text-left hover:bg-surface-raised/50 transition-colors"
+        className="activity-row-button"
       >
-        <svg
+        <svg aria-hidden="true"
           className={`w-4 h-4 flex-shrink-0 text-text-subtle transition-transform ${open ? 'rotate-90' : ''}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-text truncate">{entityName(primary)}</span>
             {llm && <Badge color="purple" size="sm">AI</Badge>}
             {multi && <span className="text-2xs text-text-subtle">· {group.events.length} changes</span>}
@@ -74,7 +78,8 @@ function FeedRow({ group }) {
       </button>
 
       {open && (
-        <div className="px-4 sm:px-5 pb-3 pl-11 space-y-3 animate-in">
+        <div id={detailId} className="activity-row-details space-y-3">
+          <p className="journal-caption">{formatDateTime(time)}</p>
           {group.events.map(ev => (
             <div key={ev.id} className="rounded-lg bg-surface-sunken border border-border px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -98,23 +103,23 @@ export default function ActivityFeed({
   const groups = useMemo(() => groupEvents(events), [events])
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-text uppercase tracking-wide">Activity</h2>
+    <section id="activity" className="journal-panel activity-panel" aria-label="Activity">
+      <div className="journal-section-heading activity-heading">
+        <div><p className="journal-kicker">THE RECORD</p><h2>Activity</h2></div>
         <button
+          type="button"
+          aria-pressed={showAll}
           onClick={onToggleShowAll}
-          className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
-            showAll
-              ? 'border-accent text-accent bg-accent-soft'
-              : 'border-border text-text-muted hover:text-text'
-          }`}
+          className="activity-toggle"
         >
           {showAll ? 'Showing all activity' : 'Show all activity'}
         </button>
       </div>
 
+      <p className="activity-intro">{showAll ? 'All recorded changes, including field edits.' : 'Payments, balance changes, and added or removed entries.'} Select an entry for details.</p>
+
       {loading ? (
-        <div className="flex justify-center py-12"><Spinner size="lg" className="text-accent" /></div>
+        <div role="status" aria-label="Loading activity" className="flex justify-center py-12"><Spinner size="lg" className="text-accent" /></div>
       ) : groups.length === 0 ? (
         <EmptyState
           title="No activity yet"
@@ -122,11 +127,11 @@ export default function ActivityFeed({
         />
       ) : (
         <>
-          <div className="rounded-xl border border-border bg-surface overflow-hidden">
+          <div className="activity-rows">
             {groups.map(g => <FeedRow key={g.key} group={g} />)}
           </div>
           {hasMore && (
-            <div className="flex justify-center mt-4">
+            <div className="activity-load-more">
               <Button variant="outline" size="sm" loading={loadingMore} onClick={onLoadMore}>
                 Load more
               </Button>
@@ -134,6 +139,6 @@ export default function ActivityFeed({
           )}
         </>
       )}
-    </div>
+    </section>
   )
 }

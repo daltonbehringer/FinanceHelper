@@ -51,5 +51,5 @@ export default function CompositionChart({ series }) {
   }, [series])
 
   const [ref] = useECharts(option)
-  return <div ref={ref} className="h-60 w-full" />
+  return <div ref={ref} className="h-60 w-full" role="img" aria-label="Stacked chart of recorded assets and debts over time" />
 }
