@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 
-export default function OverflowMenu({ items }) {
+export default function OverflowMenu({ items, label = 'Open actions' }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0, direction: 'down' })
   const buttonRef = useRef(null)
@@ -49,11 +49,14 @@ export default function OverflowMenu({ items }) {
   return (
     <>
       <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
         ref={buttonRef}
         onClick={handleOpen}
         className="p-2.5 rounded-lg text-text-subtle hover:text-text hover:bg-surface-raised transition-colors"
       >
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <svg aria-hidden="true" className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
         </svg>
       </button>

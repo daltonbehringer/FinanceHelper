@@ -22,6 +22,7 @@ export default function PayModal({
   // Reset fields each time the modal opens for a (possibly different) target.
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset this existing form when its payment target changes.
       setAmount(centsToDollarInput(defaultAmount) ?? '')
       setSourceId(defaultSourceId != null ? String(defaultSourceId) : '')
       setNote('')
@@ -49,6 +50,7 @@ export default function PayModal({
         {label && <p className="text-sm text-text-muted">{label}</p>}
         <Input
           label="Amount"
+          prefix="$"
           type="number"
           min="0"
           step="0.01"

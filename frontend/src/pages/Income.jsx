@@ -7,7 +7,8 @@ import Button from '../components/ui/Button'
 import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
-import EntityPage, { isInactive } from '../components/crud/EntityPage'
+import EntityPage from '../components/crud/EntityPage'
+import { isInactive } from '../lib/entities'
 
 const EMPTY_FORM = { name: '', amount: '', frequency: 'monthly', income_day: '', second_income_day: '', last_pay_date: '' }
 
@@ -37,7 +38,7 @@ function IncomeForm({ form, setForm, onSubmit, onCancel, loading, submitLabel })
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit() }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <Input label="Name *" name="name" value={form.name} onChange={handleChange} required placeholder="e.g. Salary" />
-      <Input label="Amount (per period, post-tax) *" name="amount" type="number" step="0.01" min="0" value={form.amount} onChange={handleChange} required placeholder="0.00" />
+      <Input label="Amount (per period, post-tax) *" name="amount" prefix="$" type="number" step="0.01" min="0" value={form.amount} onChange={handleChange} required placeholder="0.00" />
       <Select label="Frequency *" name="frequency" value={form.frequency} onChange={handleChange} required>
         {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
       </Select>
@@ -60,7 +61,8 @@ function MobileRow({ item, actions }) {
   const inactive = isInactive(item)
   const next = formatDate(item.next_payday)
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}>
+    <div className={`ledger-mobile-row ${inactive ? 'ledger-inactive' : ''}`}>
+      <span className="ledger-mobile-icon" aria-hidden="true">{item.name?.slice(0, 1).toUpperCase()}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium text-text truncate">{item.name}</span>
@@ -72,7 +74,7 @@ function MobileRow({ item, actions }) {
         </div>
         {next && next !== '—' && <div className="text-xs text-text-subtle mt-0.5">Next: {next}</div>}
       </div>
-      <OverflowMenu items={actions} />
+      <OverflowMenu items={actions} label={`Actions for ${item.name}`} />
     </div>
   )
 }
@@ -123,6 +125,12 @@ export default function Income() {
     }
   }
 
+  const activeIncome = crud.items.filter((item) => !isInactive(item))
+  const monthlyIncome = Math.round(activeIncome.reduce((sum, item) => sum + monthlyEquiv(item.amount, item.frequency), 0))
+  const scheduled = activeIncome.filter((item) => item.next_payday && item.amount > 0).sort((a, b) => a.next_payday.localeCompare(b.next_payday))
+  const nextPayday = scheduled[0]?.next_payday
+  const nextAmount = scheduled.filter((item) => item.next_payday === nextPayday).reduce((sum, item) => sum + item.amount, 0)
+
   const columns = [
     { key: 'name', label: 'Name', headerClass: 'w-[18%]', cellClass: 'font-medium text-text truncate', render: (i) => (<>{i.name}{isInactive(i) && <Badge color="gray" className="ml-2">Inactive</Badge>}</>) },
     { key: 'amount', label: 'Amount', align: 'right', headerClass: 'w-[14%]', cellClass: 'font-medium text-text tnum truncate', render: (i) => formatMoney(i.amount) },
@@ -136,6 +144,19 @@ export default function Income() {
     <EntityPage
       crud={crud}
       title="Income"
+      eyebrow="LOOKING AHEAD"
+      description="Know what is coming in and when. Keep your pay schedule up to date to give your cash plan a reliable starting point."
+      summaries={[
+        { label: 'AVERAGE MONTHLY INCOME', value: formatMoney(monthlyIncome), detail: 'Post-tax estimate across your active income sources.' },
+        { label: 'NEXT EXPECTED PAYCHECK', value: nextPayday ? formatMoney(nextAmount) : '—', detail: nextPayday ? `Expected ${formatDate(nextPayday)} · not yet received` : 'Complete your pay schedules to see the next paycheck.' },
+        { label: 'ACTIVE SOURCES', value: String(activeIncome.length).padStart(2, '0'), detail: 'Mark receipts as paid to keep the next payday current.' },
+      ]}
+      filters={[
+        { key: 'weekly', label: 'Weekly', matches: (i) => i.frequency === 'weekly' },
+        { key: 'twice', label: 'Biweekly / twice monthly', matches: (i) => ['biweekly', 'semimonthly'].includes(i.frequency) },
+        { key: 'monthly', label: 'Monthly', matches: (i) => i.frequency === 'monthly' },
+      ]}
+      listNote="Amounts are per paycheck, after tax. Monthly equivalents are estimates."
       addLabel="Add Income"
       entityLabel="Income"
       columns={columns}

@@ -11,7 +11,8 @@ import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
 import PayModal from '../components/PayModal'
-import EntityPage, { isInactive } from '../components/crud/EntityPage'
+import EntityPage from '../components/crud/EntityPage'
+import { isInactive } from '../lib/entities'
 
 const EMPTY_FORM = {
   name: '', type: 'checking', balance: '', interest_rate: '', minimum_payment: '',
@@ -62,6 +63,7 @@ function AccountForm({ form, setForm, fieldTypes, onSubmit, onCancel, loading, s
           key={f.name}
           label={f.required ? `${f.label} *` : f.label}
           name={f.name}
+          prefix={f.kind === 'money' ? '$' : undefined}
           type={f.kind === 'date' ? 'date' : 'number'}
           step={f.kind === 'date' ? undefined : '0.01'}
           min={f.name === 'balance' || f.kind === 'date' ? undefined : '0'}
@@ -83,7 +85,8 @@ function MobileRow({ account, actions }) {
   const balance = account.current_balance ?? account.balance
   const inactive = isInactive(account)
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}>
+    <div className={`ledger-mobile-row ${inactive ? 'ledger-inactive' : ''}`}>
+      <span className="ledger-mobile-icon" aria-hidden="true">{account.name?.slice(0, 1).toUpperCase()}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium text-text truncate">{account.name}</span>
@@ -103,7 +106,7 @@ function MobileRow({ account, actions }) {
           </div>
         )}
       </div>
-      <OverflowMenu items={actions} />
+      <OverflowMenu items={actions} label={`Actions for ${account.name}`} />
     </div>
   )
 }
@@ -178,6 +181,11 @@ export default function Accounts() {
     }
   }
 
+  const activeAccounts = crud.items.filter((account) => !isInactive(account))
+  const total = (items) => items.reduce((sum, account) => sum + (account.current_balance ?? account.balance ?? 0), 0)
+  const assets = total(activeAccounts.filter((account) => !isDebt(account.type)))
+  const debts = total(activeAccounts.filter((account) => isDebt(account.type)))
+
   const columns = [
     {
       key: 'name', label: 'Name', headerClass: 'w-[18%]',
@@ -210,6 +218,19 @@ export default function Accounts() {
     <EntityPage
       crud={crud}
       title="Accounts"
+      eyebrow="YOUR FINANCIAL FOUNDATION"
+      description="A clear view of what you own and what you owe. Keep your balances current and your next move in focus."
+      summaries={[
+        { label: 'NET WORTH', value: formatMoney(assets - debts), detail: `${activeAccounts.length} active accounts · assets minus debt` },
+        { label: 'TOTAL ASSETS', value: formatMoney(assets), detail: 'Cash, savings, investments, and other assets.' },
+        { label: 'TOTAL DEBT', value: formatMoney(debts), detail: 'Outstanding balances across your debt accounts.' },
+      ]}
+      filters={[
+        { key: 'cash', label: 'Cash', matches: (a) => ['checking', 'savings'].includes(a.type) },
+        { key: 'investments', label: 'Investments', matches: (a) => INVESTMENT_TYPES.includes(a.type) },
+        { key: 'debt', label: 'Debt', matches: (a) => isDebt(a.type) },
+      ]}
+      listNote="Latest recorded balances. Use row actions to edit or record a payment."
       addLabel="Add Account"
       entityLabel="Account"
       columns={columns}
@@ -237,7 +258,7 @@ export default function Accounts() {
         </svg>
       }
     />
-    <PayModal
+    <div className="ledger-payment"><PayModal
       isOpen={payTarget != null}
       onClose={() => setPayTarget(null)}
       title={payTarget ? `Pay ${payTarget.name}` : 'Pay debt'}
@@ -248,7 +269,7 @@ export default function Accounts() {
       requireSource
       busy={paying}
       onSubmit={handlePay}
-    />
+    /></div>
     </>
   )
 }

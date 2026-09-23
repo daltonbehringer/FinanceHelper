@@ -1,27 +1,33 @@
+import { useState } from 'react'
 import Button from '../ui/Button'
-import Card, { CardBody } from '../ui/Card'
 import Modal from '../ui/Modal'
 import EmptyState from '../ui/EmptyState'
 import Spinner from '../ui/Spinner'
 import SortableHeader from '../ui/SortableHeader'
 import OverflowMenu from '../ui/OverflowMenu'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import '../../styles/entities.css'
+import { isInactive } from '../../lib/entities'
 
-export function isInactive(item) {
-  return item.is_active === 0 || item.is_active === false
-}
 
 const alignClass = (align) => (align === 'right' ? 'text-right' : 'text-left')
 const hideClass = (hide) =>
-  hide === 'lg' ? 'hidden lg:table-cell' : hide === 'xl' ? 'hidden xl:table-cell' : ''
+  hide === 'lg'
+    ? 'hidden lg:table-cell'
+    : hide === 'xl'
+      ? 'hidden xl:table-cell'
+      : ''
 
-/** The shared list/add/edit/deactivate shell for CRUD pages. `crud` is the
- *  useCrudPage return; the page supplies the form, the desktop `columns`
- *  (each with a render fn), and a `renderMobileRow`. Edit + Deactivate actions
- *  are built here; `extraActions(item)` injects page-specific ones (e.g. Mark Paid). */
+// Presentation only: form props, actions, sort state, and writes are still owned
+// by the page and useCrudPage. Search and category filters apply to the list only.
 export default function EntityPage({
   crud,
   title,
+  eyebrow,
+  description,
+  summaries = [],
+  filters = [],
+  listNote,
   addLabel,
   entityLabel,
   columns,
@@ -31,70 +37,179 @@ export default function EntityPage({
   FormComponent,
   addFormProps,
   editFormProps,
-  formTitles,            // { add, edit }
+  formTitles,
   emptyIcon,
   emptyTitle,
   emptyDescription,
   modalMaxWidth = 'max-w-2xl',
 }) {
+  const Form = FormComponent
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
   const {
-    sorted, loading,
-    showInactive, setShowInactive,
-    showAddForm, toggleAdd, startAdd,
-    editItem, closeEdit, openEdit,
-    sortCol, sortDir, handleSort, setSort,
-    pendingDeactivate, requestDeactivate, confirmDeactivate, cancelDeactivate,
+    sorted,
+    loading,
+    showInactive,
+    setShowInactive,
+    showAddForm,
+    toggleAdd,
+    startAdd,
+    editItem,
+    closeEdit,
+    openEdit,
+    sortCol,
+    sortDir,
+    handleSort,
+    setSort,
+    pendingDeactivate,
+    requestDeactivate,
+    confirmDeactivate,
+    cancelDeactivate,
   } = crud
+  const selectedFilter = filters.find((item) => item.key === filter)
+  const visible = sorted.filter(
+    (item) =>
+      (!selectedFilter || selectedFilter.matches(item)) &&
+      [item.name, item.type, item.category, item.frequency]
+        .filter(Boolean)
+        .join(' ')
+        .replaceAll('_', ' ')
+        .toLowerCase()
+        .includes(query.trim().toLowerCase())
+  )
 
   function buildActions(item) {
     const actions = [{ label: 'Edit', onClick: () => openEdit(item) }]
     if (!isInactive(item)) {
       if (extraActions) actions.push(...extraActions(item))
-      actions.push({ label: 'Deactivate', danger: true, onClick: () => requestDeactivate(item) })
+      actions.push({
+        label: 'Deactivate',
+        danger: true,
+        onClick: () => requestDeactivate(item),
+      })
     }
     return actions
   }
 
-  if (loading) {
+  if (loading)
     return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner size="lg" className="text-accent" />
+      <div
+        role="status"
+        aria-label={`Loading ${title.toLowerCase()}`}
+        className="ledger-loading"
+      >
+        <Spinner size="lg" />
       </div>
     )
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-text">{title}</h1>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer select-none">
+    <div className={`ledger-page ledger-${title.toLowerCase()}`}>
+      <header className="ledger-header">
+        <div>
+          <p className="ledger-kicker">{eyebrow}</p>
+          <h1>{title}.</h1>
+          <p className="ledger-description">{description}</p>
+        </div>
+        <Button className="ledger-add-button" onClick={toggleAdd}>
+          <span aria-hidden="true">{showAddForm ? '−' : '+'}</span>
+          {showAddForm ? 'Cancel' : addLabel}
+        </Button>
+      </header>
+
+      <section className="ledger-summaries" aria-label={`${title} summary`}>
+        {summaries.map((summary, index) => (
+          <div
+            key={summary.label}
+            className={`ledger-summary ${index === 0 ? 'ledger-summary-featured' : ''}`}
+          >
+            <p className="ledger-kicker">{summary.label}</p>
+            <p className="ledger-summary-value">{summary.value}</p>
+            <p className="ledger-summary-detail">{summary.detail}</p>
+          </div>
+        ))}
+      </section>
+
+      {showAddForm && (
+        <section className="ledger-form-panel" aria-label={formTitles.add}>
+          <div className="ledger-form-heading">
+            <span className="ledger-kicker">A NEW ENTRY</span>
+            <h2>{formTitles.add}</h2>
+          </div>
+          <Form {...addFormProps} />
+        </section>
+      )}
+
+      <section className="ledger-list" aria-label={`${title} list`}>
+        <div className="ledger-list-heading">
+          <div>
+            <p className="ledger-kicker">THE DETAILS</p>
+            <h2>Your {title.toLowerCase()}</h2>
+          </div>
+          <span className="ledger-count">
+            {sorted.length} {sorted.length === 1 ? 'entry' : 'entries'}
+          </span>
+        </div>
+        <div className="ledger-toolbar">
+          <div
+            className="ledger-filters"
+            role="group"
+            aria-label={`Filter ${title.toLowerCase()}`}
+          >
+            <button
+              type="button"
+              aria-pressed={filter === 'all'}
+              onClick={() => setFilter('all')}
+            >
+              All {title.toLowerCase()} <span>{sorted.length}</span>
+            </button>
+            {filters.map((item) => (
+              <button
+                type="button"
+                key={item.key}
+                aria-pressed={filter === item.key}
+                onClick={() => setFilter(item.key)}
+              >
+                {item.label} <span>{sorted.filter(item.matches).length}</span>
+              </button>
+            ))}
+          </div>
+          <label className="ledger-search">
+            <svg
+              aria-hidden="true"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 4 4" />
+            </svg>
+            <input
+              type="search"
+              aria-label={`Search ${title.toLowerCase()}`}
+              placeholder={`Search ${title.toLowerCase()}…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="ledger-list-options">
+          <span>
+            {visible.length} of {sorted.length} shown
+          </span>
+          <label>
             <input
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-border text-accent focus:ring-accent/20"
             />
             Show inactive
           </label>
-          <Button onClick={toggleAdd}>{showAddForm ? 'Cancel' : addLabel}</Button>
         </div>
-      </div>
 
-      {/* Add form */}
-      {showAddForm && (
-        <Card>
-          <CardBody>
-            <h2 className="text-lg font-semibold text-text mb-4">{formTitles.add}</h2>
-            <FormComponent {...addFormProps} />
-          </CardBody>
-        </Card>
-      )}
-
-      {/* List / table */}
-      {sorted.length === 0 ? (
-        <Card>
+        {sorted.length === 0 ? (
           <EmptyState
             icon={emptyIcon}
             title={emptyTitle}
@@ -102,97 +217,147 @@ export default function EntityPage({
             action={addLabel}
             onAction={startAdd}
           />
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          {/* Mobile compact list */}
-          <div className="md:hidden">
-            {mobileSortOptions && (
-              <div className="px-4 py-2 border-b border-border">
-                <select
-                  value={`${sortCol}:${sortDir}`}
-                  onChange={(e) => {
-                    const [col, dir] = e.target.value.split(':')
-                    setSort(col, dir)
-                  }}
-                  className="w-full rounded-lg border border-border bg-surface-sunken px-3 py-1.5 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none"
-                >
-                  {mobileSortOptions.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+        ) : visible.length === 0 ? (
+          <div className="ledger-no-results">
+            <h3>No matching {title.toLowerCase()}.</h3>
+            <p>Try another name or show all entries.</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setQuery('')
+                setFilter('all')
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="ledger-mobile md:hidden">
+              {mobileSortOptions && (
+                <div className="ledger-mobile-sort">
+                  <label>
+                    <span className="sr-only">Sort {title.toLowerCase()}</span>
+                    <select
+                      value={`${sortCol}:${sortDir}`}
+                      onChange={(e) => {
+                        const [col, dir] = e.target.value.split(':')
+                        setSort(col, dir)
+                      }}
+                    >
+                      {mobileSortOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+              <div className="ledger-mobile-list">
+                {visible.map((item) =>
+                  renderMobileRow(item, buildActions(item))
+                )}
               </div>
-            )}
-            <div className="divide-y divide-border">
-              {sorted.map((item) => renderMobileRow(item, buildActions(item)))}
             </div>
-          </div>
-
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm table-fixed">
-              <thead>
-                <tr className="border-b border-border bg-surface-sunken/40">
-                  {columns.map((col) =>
-                    col.sortable === false ? (
-                      <th
-                        key={col.key}
-                        className={`px-4 py-3 font-medium text-text-subtle ${alignClass(col.align)} ${col.headerClass || ''} ${hideClass(col.hide)}`}
-                      >
-                        {col.label}
-                      </th>
-                    ) : (
-                      <SortableHeader
-                        key={col.key}
-                        label={col.label}
-                        sortKey={col.key}
-                        sortCol={sortCol}
-                        sortDir={sortDir}
-                        onSort={handleSort}
-                        className={`${alignClass(col.align)} ${col.headerClass || ''} ${hideClass(col.hide)}`}
-                      />
-                    )
-                  )}
-                  <th className="px-4 py-3 text-right font-medium text-text-subtle w-[10%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sorted.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={`hover:bg-surface-raised/40 transition-colors ${isInactive(item) ? 'opacity-50' : ''}`}
-                  >
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        className={`px-4 py-3 ${alignClass(col.align)} ${col.cellClass || ''} ${hideClass(col.hide)}`}
-                      >
-                        {col.render(item)}
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-right">
-                      <OverflowMenu items={buildActions(item)} />
-                    </td>
+            <div className="ledger-table-wrap hidden md:block">
+              <table className="w-full text-sm table-fixed">
+                <caption className="sr-only">
+                  {title}. Use column headings to sort and row actions to edit
+                  or record activity.
+                </caption>
+                <thead>
+                  <tr>
+                    {columns.map((col) =>
+                      col.sortable === false ? (
+                        <th
+                          scope="col"
+                          key={col.key}
+                          className={`${alignClass(col.align)} ${col.headerClass || ''} ${hideClass(col.hide)}`}
+                        >
+                          {col.label}
+                        </th>
+                      ) : (
+                        <SortableHeader
+                          key={col.key}
+                          label={col.label}
+                          sortKey={col.key}
+                          sortCol={sortCol}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                          className={`${alignClass(col.align)} ${col.headerClass || ''} ${hideClass(col.hide)}`}
+                        />
+                      )
+                    )}
+                    <th scope="col" className="ledger-actions-heading">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+                </thead>
+                <tbody>
+                  {visible.map((item) => (
+                    <tr
+                      key={item.id}
+                      className={isInactive(item) ? 'ledger-inactive' : ''}
+                    >
+                      {columns.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`${alignClass(col.align)} ${col.cellClass || ''} ${hideClass(col.hide)}`}
+                        >
+                          {col.key === 'name' ? (
+                            <div className="ledger-identity">
+                              <span
+                                className="ledger-monogram"
+                                aria-hidden="true"
+                              >
+                                {item.name?.trim().slice(0, 1).toUpperCase() ||
+                                  '·'}
+                              </span>
+                              <div title={item.name}>{col.render(item)}</div>
+                            </div>
+                          ) : (
+                            col.render(item)
+                          )}
+                        </td>
+                      ))}
+                      <td className="text-right">
+                        <OverflowMenu
+                          items={buildActions(item)}
+                          label={`Actions for ${item.name}`}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        <footer className="ledger-list-footer">
+          <span>{listNote}</span>
+          <span>Summary totals use active entries.</span>
+        </footer>
+      </section>
 
-      {/* Edit modal */}
-      <Modal isOpen={editItem !== null} onClose={closeEdit} title={formTitles.edit} maxWidth={modalMaxWidth}>
-        <FormComponent {...editFormProps} />
+      <Modal
+        isOpen={editItem !== null}
+        onClose={closeEdit}
+        title={formTitles.edit}
+        maxWidth={modalMaxWidth}
+      >
+        <Form {...editFormProps} />
       </Modal>
-
-      {/* Deactivate confirmation (replaces window.confirm) */}
       <ConfirmDialog
         isOpen={pendingDeactivate !== null}
         onClose={cancelDeactivate}
         onConfirm={confirmDeactivate}
         title={`Deactivate ${entityLabel.toLowerCase()}?`}
-        message={pendingDeactivate ? `"${pendingDeactivate.name}" will be hidden from active views.` : ''}
+        message={
+          pendingDeactivate
+            ? `"${pendingDeactivate.name}" will be hidden from active views.`
+            : ''
+        }
         confirmText="Deactivate"
       />
     </div>

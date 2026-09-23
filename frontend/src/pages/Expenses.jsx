@@ -10,7 +10,8 @@ import Input, { Select } from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import OverflowMenu from '../components/ui/OverflowMenu'
 import PayModal from '../components/PayModal'
-import EntityPage, { isInactive } from '../components/crud/EntityPage'
+import EntityPage from '../components/crud/EntityPage'
+import { isInactive } from '../lib/entities'
 
 const EMPTY_FORM = { name: '', amount: '', category: '', isOneTime: false, due_day: '', due_date: '', next_due_date: '', linked_account_id: '' }
 
@@ -40,7 +41,7 @@ function ExpenseForm({ form, setForm, onSubmit, loading, submitLabel, accounts =
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit() }} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Input label="Name" value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder="e.g. Netflix, Rent" required />
-      <Input label="Amount" type="number" min="0" step="0.01" value={form.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder="0.00" required />
+      <Input label="Amount" prefix="$" type="number" min="0" step="0.01" value={form.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder="0.00" required />
       <Input label="Category" value={form.category} onChange={(e) => handleChange('category', e.target.value)} placeholder="e.g. Entertainment, Housing" />
 
       <div className="flex items-end">
@@ -92,7 +93,8 @@ function MobileRow({ expense, actions }) {
   const recurring = isRecurring(expense)
   const due = expenseDue(expense)
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${inactive ? 'opacity-50' : ''}`}>
+    <div className={`ledger-mobile-row ${inactive ? 'ledger-inactive' : ''}`}>
+      <span className="ledger-mobile-icon" aria-hidden="true">{expense.name?.slice(0, 1).toUpperCase()}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium text-text truncate">{expense.name}</span>
@@ -104,7 +106,7 @@ function MobileRow({ expense, actions }) {
         </div>
         {due !== '—' && <div className="text-xs text-text-subtle mt-0.5">Due: {due}</div>}
       </div>
-      <OverflowMenu items={actions} />
+      <OverflowMenu items={actions} label={`Actions for ${expense.name}`} />
     </div>
   )
 }
@@ -179,6 +181,12 @@ export default function Expenses() {
     }
   }
 
+  const activeExpenses = crud.items.filter((expense) => !isInactive(expense) && !expense.linked_account_id)
+  const recurringTotal = activeExpenses.filter(isRecurring).reduce((sum, expense) => sum + expense.amount, 0)
+  const oneTimeTotal = activeExpenses.filter((expense) => !isRecurring(expense)).reduce((sum, expense) => sum + expense.amount, 0)
+  const nextExpense = activeExpenses.filter((expense) => expense.amount > 0 && (isRecurring(expense) ? expense.next_due_date : expense.due_date))
+    .sort((a, b) => (isRecurring(a) ? a.next_due_date : a.due_date).localeCompare(isRecurring(b) ? b.next_due_date : b.due_date))[0]
+
   const columns = [
     { key: 'name', label: 'Name', headerClass: 'w-[25%]', cellClass: 'font-medium text-text truncate', render: (e) => <>{e.name}{e.linked_account_id && <span className="block text-xs text-text-muted">Payment tracked in Accounts</span>}</> },
     { key: 'type', label: 'Type', headerClass: 'w-[15%]', render: (e) => <Badge color={isRecurring(e) ? 'green' : 'blue'}>{isRecurring(e) ? 'Recurring' : 'One-time'}</Badge> },
@@ -192,6 +200,19 @@ export default function Expenses() {
     <EntityPage
       crud={crud}
       title="Expenses"
+      eyebrow="MAKE ROOM FOR WHAT MATTERS"
+      description="Keep the essentials accounted for. Review your bills, track what is due, and record payments in one place."
+      summaries={[
+        { label: 'MONTHLY EXPENSES', value: formatMoney(recurringTotal), detail: 'Recurring expenses · linked account payments excluded.' },
+        { label: 'ONE-TIME EXPENSES', value: formatMoney(oneTimeTotal), detail: 'Active one-time costs · linked payments excluded.' },
+        { label: 'NEXT UNPAID EXPENSE', value: nextExpense ? expenseDue(nextExpense) : '—', detail: nextExpense ? `${nextExpense.name} · ${formatMoney(nextExpense.amount)}` : 'No dated expense to show. Review missing due dates below.' },
+      ]}
+      filters={[
+        { key: 'recurring', label: 'Recurring', matches: isRecurring },
+        { key: 'one-time', label: 'One-time', matches: (e) => !isRecurring(e) },
+        { key: 'linked', label: 'Linked', matches: (e) => Boolean(e.linked_account_id) },
+      ]}
+      listNote="Linked payments are managed in Accounts and excluded from these totals."
       addLabel="Add Expense"
       entityLabel="Expense"
       columns={columns}
@@ -220,7 +241,7 @@ export default function Expenses() {
         </svg>
       }
     />
-    <PayModal
+    <div className="ledger-payment"><PayModal
       isOpen={payTarget != null}
       onClose={() => setPayTarget(null)}
       title={payTarget ? `Pay ${payTarget.name}` : 'Pay expense'}
@@ -230,7 +251,7 @@ export default function Expenses() {
       defaultSourceId={settings?.default_payment_account_id}
       busy={paying}
       onSubmit={handlePay}
-    />
+    /></div>
     </>
   )
 }
