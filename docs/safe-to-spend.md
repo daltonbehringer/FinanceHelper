@@ -55,6 +55,21 @@ The expandable dashboard breakdown shows each deduction and dated obligation.
   figure does not guarantee later pay periods are funded. Longer-term planning uses
   the monthly forecast separately.
 
+## Settings and currency entry
+
+Settings groups the single monthly estimate and optional categories under **Living
+costs**. The monthly total identifies which source is in use. Categories replace
+the single estimate; the saved estimate remains available if all categories are
+removed. **Cash reserves** contains the separate cash cushion and large-payment
+threshold. Payment-account and advisor preferences explain their effects separately.
+
+Category edits save on blur or Enter; additions, removals, and area estimates save
+immediately. Other fields use **Save Settings**. All Settings money inputs display
+a dollar prefix and two decimal places after editing, accept pasted dollar amounts,
+and reject negative values or more than two decimal places. API/storage values
+remain integer cents. Local-estimate suggestions must be reviewed for overlap with
+tracked bills.
+
 ## Large payment holds
 
 Settings' **Large payment threshold** (`large_payment_threshold`, integer cents)

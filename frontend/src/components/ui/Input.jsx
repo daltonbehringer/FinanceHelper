@@ -1,6 +1,6 @@
 import { useId } from 'react'
 
-export default function Input({ label, className = '', ...props }) {
+export default function Input({ label, className = '', prefix, ...props }) {
   const generatedId = useId()
   const id = props.id || generatedId
   return (
@@ -10,13 +10,16 @@ export default function Input({ label, className = '', ...props }) {
           {label}
         </label>
       )}
-      <input
-        id={id}
-        className="w-full px-3 py-2 rounded-lg border border-border bg-surface-sunken text-text text-sm
+      <div className="relative">
+        {prefix && <span aria-hidden="true" className="pointer-events-none absolute left-3 top-2 text-sm text-text-muted">{prefix}</span>}
+        <input
+          id={id}
+          className={`w-full ${prefix ? 'pl-7 pr-3 tabular-nums' : 'px-3'} py-2 rounded-lg border border-border bg-surface-sunken text-text text-sm
           focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent
-          transition-colors placeholder:text-text-subtle"
-        {...props}
-      />
+          transition-colors placeholder:text-text-subtle`}
+          {...props}
+        />
+      </div>
     </div>
   )
 }

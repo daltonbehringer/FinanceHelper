@@ -21,6 +21,13 @@ export function centsToDollarInput(cents) {
   return String(cents / 100)
 }
 
+// Strict validation for currency inputs; never save a partially parsed amount.
+export function moneyInputCents(value) {
+  if (!/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(String(value))) return null
+  const cents = Math.round(Number(value) * 100)
+  return Number.isSafeInteger(cents) ? cents : null
+}
+
 // Compact money for chart axes: 12345600 cents -> "$123k", 4500 -> "$45".
 export function compactMoney(cents) {
   if (cents == null) return ''

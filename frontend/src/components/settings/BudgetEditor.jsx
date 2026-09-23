@@ -1,73 +1,71 @@
 import { useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { centsToDollarInput, dollarsToCents, formatMoney, formatType } from '../../lib/utils'
-import { useSpendingMoney } from '../../hooks/useSpendingMoney'
+import { centsToDollarInput, moneyInputCents, formatType } from '../../lib/utils'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
+import MoneyInput from '../ui/MoneyInput'
 import Badge from '../ui/Badge'
 
-/**
- * Budget-lines editor for Settings. Lines are untracked variable-spending
- * estimates that feed the projected monthly surplus. The
- * "Estimate from my area" button seeds metro-level averages (origin badge =
- * "LLM est"); any edit flips a line to "You" and protects it from re-estimation.
- *
- * `zip` and `householdSize` come from the parent Settings form so an estimate
- * can run against unsaved values.
- */
-export default function BudgetEditor({ zip, householdSize, showToast, lines, refetch }) {
-  const { summary, refetch: refetchSummary } = useSpendingMoney()
+// Categories replace the single estimate in both cash planning and monthly surplus.
+export default function BudgetEditor({ zip, householdSize, showToast, lines, refetch, children }) {
   const [newCategory, setNewCategory] = useState('')
   const [newAmount, setNewAmount] = useState('')
   const [estimating, setEstimating] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState('')
+  const [status, setStatus] = useState('')
 
-  function reload() { refetch(); refetchSummary() }
-
-  async function saveLine(line, patch) {
-    const resp = await apiFetch(`/api/budget/lines/${line.id}`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    })
-    if (resp && resp.ok) reload()
-    else showToast('Failed to update line', 'error')
-  }
-
-  async function removeLine(line) {
-    const resp = await apiFetch(`/api/budget/lines/${line.id}`, { method: 'DELETE' })
-    if (resp && resp.ok) reload()
-    else showToast('Failed to remove line', 'error')
-  }
-
-  async function addLine() {
-    const amount = dollarsToCents(newAmount)
-    if (!newCategory.trim() || amount == null || amount < 0) return
-    const resp = await apiFetch('/api/budget/lines', {
-      method: 'POST',
-      body: JSON.stringify({ category: newCategory.trim(), amount }),
-    })
-    if (resp && resp.ok) {
-      setNewCategory(''); setNewAmount(''); reload()
-    } else {
-      showToast('Failed to add line', 'error')
+  async function write(path, method, body, message) {
+    setError('')
+    setStatus('Saving categories…')
+    try {
+      const response = await apiFetch(path, { method, ...(body ? { body: JSON.stringify(body) } : {}) })
+      if (!response?.ok) throw new Error(message)
+      refetch()
+      setStatus('Categories saved')
+      return true
+    } catch {
+      setError(message)
+      setStatus('')
+      return false
     }
   }
 
+  function saveLine(line, patch) {
+    return write(`/api/budget/lines/${line.id}`, 'PUT', patch, `Could not save ${formatType(line.category)}. Try editing it again.`)
+  }
+
+  async function addLine() {
+    const amount = moneyInputCents(newAmount)
+    if (!newCategory.trim() || amount === null) {
+      setError('Enter a category and a valid monthly dollar amount before adding it.')
+      return
+    }
+    setAdding(true)
+    const saved = await write('/api/budget/lines', 'POST', { category: newCategory.trim(), amount }, 'Could not add the category. Try again.')
+    if (saved) { setNewCategory(''); setNewAmount('') }
+    setAdding(false)
+  }
+
   async function estimate() {
-    if (!zip) { showToast('Enter a ZIP code first', 'error'); return }
+    if (!zip) { setError('Enter a ZIP code before requesting a local estimate.'); return }
+    if (householdSize && (!Number.isInteger(Number(householdSize)) || Number(householdSize) < 1)) {
+      setError('Household size must be a whole number of at least 1.')
+      return
+    }
+    setError('')
     setEstimating(true)
     try {
       const resp = await apiFetch('/api/budget/estimate', {
         method: 'POST',
-        body: JSON.stringify({ zip_code: zip, household_size: householdSize ? Number(householdSize) : null }),
+        body: JSON.stringify({ zip_code: zip, household_size: householdSize ? Number(householdSize) : 1 }),
       })
-      if (resp && resp.ok) {
-        showToast('Estimated from your area — review and adjust', 'success')
-        reload()
-      } else {
-        showToast('Could not generate an estimate. Try again.', 'error')
-      }
+      if (!resp?.ok) throw new Error('Estimate failed')
+      showToast('Estimated from your area — review and adjust', 'success')
+      setStatus('Estimated categories saved. Review the amounts below.')
+      refetch()
     } catch {
-      showToast('Could not generate an estimate. Try again.', 'error')
+      setError('Could not generate an estimate. Try again.')
     } finally {
       setEstimating(false)
     }
@@ -75,105 +73,85 @@ export default function BudgetEditor({ zip, householdSize, showToast, lines, ref
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-text-muted">
-          Estimated monthly spending for untracked, variable costs. Don't duplicate bills you
-          already track in Expenses or Accounts.
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={estimate} loading={estimating}>
-          Estimate from my area
-        </Button>
-      </div>
-
+      <p className="text-sm text-text-muted text-pretty">
+        Category edits save when you leave a field. Adding, removing, and estimating categories
+        also saves immediately. Enter monthly amounts in dollars.
+      </p>
       {lines.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {lines.map((line) => (
-            <div key={line.id} className="flex items-center gap-2">
+            <div key={line.id} className="grid grid-cols-2 sm:flex sm:items-start gap-2">
               <Input
-                className="flex-1"
+                key={`category-${line.category}`}
+                label="Category"
+                className="min-w-0 sm:flex-1"
                 aria-label={`Budget category: ${line.category}`}
                 defaultValue={formatType(line.category)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
                 onBlur={(e) => {
-                  const v = e.target.value.trim()
-                  if (v && v !== formatType(line.category)) saveLine(line, { category: v })
+                  const value = e.target.value.trim()
+                  if (!value) { setError('Category names cannot be empty.'); return }
+                  if (value !== formatType(line.category)) saveLine(line, { category: value })
                 }}
               />
-              <Input
-                className="w-28"
+              <MoneyInput
+                key={`amount-${line.amount}`}
+                label="Monthly amount"
+                className="min-w-0 sm:w-36"
                 aria-label={`Monthly amount for ${line.category}`}
-                type="number"
-                min="0"
-                step="0.01"
                 defaultValue={centsToDollarInput(line.amount)}
-                onBlur={(e) => {
-                  const cents = dollarsToCents(e.target.value)
-                  if (cents != null && cents !== line.amount) saveLine(line, { amount: cents })
+                required
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+                onCommit={(value) => {
+                  const cents = moneyInputCents(value)
+                  if (cents !== null && cents !== line.amount) saveLine(line, { amount: cents })
                 }}
               />
-              <Badge color={line.origin === 'user' ? 'blue' : 'gray'} size="sm">
-                {line.origin === 'user' ? 'You' : 'LLM est'}
-              </Badge>
-              <button
-                type="button"
-                onClick={() => removeLine(line)}
-                className="p-2 text-text-subtle hover:text-debit rounded-lg hover:bg-surface-raised transition-colors"
-                aria-label="Remove line"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="col-span-2 flex items-center justify-end gap-2 sm:pt-6">
+                <Badge color={line.origin === 'user' ? 'blue' : 'gray'} size="sm">
+                  {line.origin === 'user' ? 'Edited' : 'Estimate'}
+                </Badge>
+                <button
+                  type="button"
+                  onClick={() => write(`/api/budget/lines/${line.id}`, 'DELETE', null, 'Could not remove the category. Try again.')}
+                  className="p-2 text-text-subtle hover:text-debit rounded-lg hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-accent"
+                  aria-label={`Remove ${formatType(line.category)}`}
+                >
+                  <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className="grid grid-cols-2 sm:flex sm:items-start gap-2">
         <Input
-          label="Add a line"
-          className="flex-1"
+          label="New category"
+          className="min-w-0 sm:flex-1"
           value={newCategory}
           onChange={(e) => setNewCategory(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLine() } }}
-          placeholder="e.g. Pet care"
+          placeholder="e.g. Groceries"
         />
-        <Input
-          className="w-28"
+        <MoneyInput
+          label="Monthly amount"
+          className="min-w-0 sm:w-36"
           aria-label="New monthly budget amount"
-          type="number"
-          min="0"
-          step="0.01"
           value={newAmount}
-          onChange={(e) => setNewAmount(e.target.value)}
+          onValueChange={setNewAmount}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLine() } }}
-          placeholder="0.00"
         />
-        <Button type="button" variant="ghost" size="sm" onClick={addLine}>Add</Button>
+        <Button type="button" variant="outline" size="sm" onClick={addLine} loading={adding} className="col-span-2 sm:mt-6">Add category</Button>
       </div>
-
-      {summary?.has_budget && (
-        <div className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-sm space-y-1">
-          <div className="flex justify-between">
-            <span className="text-text-muted">Monthly cash flow</span>
-            <span className="tnum text-text">{formatMoney(summary.monthly_cash_flow)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-text-muted">− Budgeted variable spending</span>
-            <span className="tnum text-text">{formatMoney(summary.budget_total)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-text-muted">− Required debt payments</span>
-            <span className="tnum">{formatMoney(summary.monthly_debt_payments)}</span>
-          </div>
-          {summary.issues?.map((issue) => <p key={issue} className="text-warning">{issue}</p>)}
-          <div className="flex justify-between border-t border-border pt-1 font-semibold">
-            <span className="text-text">Projected monthly surplus</span>
-            <span className={`tnum ${summary.spending_money >= 0 ? 'text-credit' : 'text-debit'}`}>
-              {formatMoney(summary.spending_money)}
-            </span>
-          </div>
-        </div>
-      )}
+      {children}
+      <Button type="button" variant="outline" size="sm" onClick={estimate} loading={estimating}>
+        Estimate from my area
+      </Button>
+      {error && <p role="alert" className="text-sm text-debit">{error}</p>}
+      {status && <p role="status" className="text-sm text-text-muted">{status}</p>}
     </div>
   )
 }
