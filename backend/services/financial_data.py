@@ -11,7 +11,12 @@ def get_accounts_for_user(user_id: int) -> list[dict]:
                    (SELECT s.balance FROM account_snapshots s
                     WHERE s.account_id = a.id ORDER BY s.id DESC LIMIT 1),
                    a.balance
-               ) AS current_balance
+               ) AS current_balance,
+               COALESCE(
+                   (SELECT s.recorded_at FROM account_snapshots s
+                    WHERE s.account_id = a.id ORDER BY s.id DESC LIMIT 1),
+                   a.created_at
+               ) AS balance_recorded_at
         FROM accounts a
         WHERE a.user_id = ? AND a.is_active = 1
         """,

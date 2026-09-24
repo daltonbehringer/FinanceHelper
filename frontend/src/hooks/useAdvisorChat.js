@@ -123,7 +123,7 @@ export function useAdvisorChat({ onUpdate, onExpenseUpdate, userId } = {}) {
       changeStatus(proposed ? 'awaiting_confirmation' : 'idle')
     }
 
-    await apiStream('/api/ai/chat', { messages: apiHistory.current }, {
+    await apiStream('/api/ai/chat', { messages: apiHistory.current, ...(fresh ? { mode: 'advice' } : {}) }, {
       signal: controller.signal,
       onText: delta => {
         if (!active() || failed) return

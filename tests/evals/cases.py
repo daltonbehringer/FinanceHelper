@@ -73,7 +73,7 @@ _case(
     setup=lambda u: _setup_card_checking(u),
     run=_turn("I paid $300 on my Discover Card"),
     tier1=lambda ctx, r: [
-        ("routes_to_balance_update", _is("record_balance_update", r)),
+        ("routes_to_pay_account", _is("pay_account", r)),
         ("target_is_card", r.preview and r.preview.get("account_id") == ctx["card"]),
         ("payment_30000", r.preview and r.preview.get("payment_made") == 30000),
         ("new_balance_70000", r.preview and r.preview.get("new_balance") == 70000),

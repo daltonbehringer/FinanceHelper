@@ -39,11 +39,11 @@ test('recommendations require a click; presets send immediately and start fresh'
   expect(requests).toHaveLength(0)
   await page.getByRole('button', { name: 'Ask advisor', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('Answer 1:')
-  expect(requests[0]).toEqual({ messages: [{ role: 'user', content: RECOMMENDATIONS_PROMPT }] })
+  expect(requests[0]).toEqual({ mode: 'advice', messages: [{ role: 'user', content: RECOMMENDATIONS_PROMPT }] })
   for (const [index, prompt] of ADVISOR_PROMPTS.entries()) {
     await page.getByRole('button', { name: prompt.label }).click()
     await expect(page.getByRole('log')).toContainText(`Answer ${index + 2}:`)
-    expect(requests[index + 1]).toEqual({ messages: [{ role: 'user', content: prompt.prompt }] })
+    expect(requests[index + 1]).toEqual({ mode: 'advice', messages: [{ role: 'user', content: prompt.prompt }] })
   }
   await page.reload()
   await expect(page.getByRole('log')).toContainText('Answer 4:')
@@ -56,7 +56,7 @@ test('top-bar Ask advisor generates exactly one response and navigation alone do
   await page.getByRole('button', { name: 'Ask advisor', exact: true }).click()
   await expect(page).toHaveURL('/chat')
   await expect(page.getByRole('log')).toContainText('Answer 1:')
-  expect(requests).toEqual([{ messages: [{ role: 'user', content: RECOMMENDATIONS_PROMPT }] }])
+  expect(requests).toEqual([{ mode: 'advice', messages: [{ role: 'user', content: RECOMMENDATIONS_PROMPT }] }])
   await page.getByRole('link', { name: 'History', exact: true }).click()
   await page.getByRole('link', { name: 'Chat', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('Answer 1:')
