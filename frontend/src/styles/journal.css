@@ -28,8 +28,7 @@
 .journal-empty h2,
 .advisor-heading h2,
 .advisor-empty h3,
-.advisor-starters h2,
-.advisor-note h3 {
+.advisor-guidance h2 {
   font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', serif;
   font-weight: 400;
   text-wrap: balance;
@@ -114,16 +113,25 @@
   margin-bottom: 20px;
 }
 
-/* A conversation workspace, with a quiet margin for starting points. */
-.advisor-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 270px;
-  gap: 24px;
-  align-items: start;
-}
-.advisor-compact {
-  grid-template-columns: minmax(0, 1fr);
-}
+/* On-demand guidance, quick answers, and an optional conversation. */
+.advisor-workspace { display: grid; gap: 20px; min-width: 0; }
+.advisor-guidance { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 30px; border-radius: 14px; background: #d4e2bf; color: #233326; }
+.advisor-guidance .journal-kicker { color: #3b503d; }
+.advisor-guidance h2 { font-family: 'Iowan Old Style', Palatino, serif; font-size: clamp(27px, 3vw, 36px); line-height: 1.2; margin: 12px 0; font-weight: 400; text-wrap: balance; }
+.advisor-guidance p:not(.journal-kicker) { max-width: 65ch; font-size: 13px; line-height: 1.7; color: #3b503d; }
+.journal-page .advisor-ask { flex-shrink: 0; min-height: 44px; padding-inline: 20px; background: #233326; color: #eaece5; border: 1px solid #233326; }
+.journal-page .advisor-ask:hover { background: #344b38; }
+.journal-page .advisor-ask:focus-visible { outline-color: #233326; }
+.advisor-quick-prompts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.advisor-quick-prompts button { display: flex; gap: 12px; align-items: center; min-height: 64px; padding: 16px 18px; border: 1px solid #303b39; border-radius: 10px; text-align: left; font-size: 12px; background: #171f21; cursor: pointer; }
+.advisor-quick-prompts button > span:nth-child(2) { flex: 1; }
+.advisor-quick-prompts button:hover { background: #25302d; border-color: #64715a; }
+.advisor-quick-prompts button:disabled { opacity: .5; cursor: default; }
+.advisor-prompt-number { color: #a4ada9; font-size: 10px; font-variant-numeric: tabular-nums; }
+.advisor-history-toggle { align-self: flex-start; margin: 18px 26px 0; font-size: 12px; color: #d4e2bf; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; min-height: 32px; }
+.advisor-footnotes { display: flex; justify-content: space-between; gap: 24px; color: #a4ada9; font-size: 11px; line-height: 1.7; }
+.advisor-footnotes p { max-width: 64ch; }
+.advisor-retention-notice { padding: 16px 26px; color: #d4e2bf; font-size: 12px; border-bottom: 1px solid #303b39; }
 .advisor-conversation {
   overflow: hidden;
   display: flex;
@@ -153,8 +161,7 @@
   line-height: 1;
 }
 .advisor-empty {
-  min-height: 350px;
-  padding: 60px 30px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -162,7 +169,7 @@
   text-align: center;
 }
 .advisor-empty h3 {
-  font-size: clamp(30px, 3vw, 42px);
+  font-size: 26px;
   line-height: 1.2;
   margin: 16px 0;
 }
@@ -177,8 +184,7 @@
   margin-top: 24px;
 }
 .advisor-thread {
-  min-height: 350px;
-  max-height: min(60dvh, 640px);
+  min-height: 120px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-color: #4a5948 #171f21;
@@ -187,6 +193,7 @@
   flex-direction: column;
   gap: 24px;
 }
+.advisor-thread-expanded { max-height: min(60dvh, 640px); }
 .advisor-message {
   min-width: 0;
   max-width: 94%;
@@ -313,83 +320,6 @@
   background: #d4e2bf;
   color: #233326;
 }
-.advisor-sidebar {
-  display: grid;
-  gap: 24px;
-}
-.advisor-starters {
-  padding: 24px;
-  border-radius: 14px;
-  background: #d4e2bf;
-  color: #233326;
-}
-.advisor-starters .journal-kicker {
-  color: #3b503d;
-}
-.advisor-starters h2 {
-  font-size: 34px;
-  line-height: 1.15;
-  margin: 16px 0;
-}
-.advisor-starters > p:not(.journal-kicker) {
-  font-size: 12px;
-  color: #3b503d;
-  line-height: 1.7;
-  margin-bottom: 22px;
-}
-.advisor-starters button {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  text-align: left;
-  width: 100%;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 16px 0;
-  border-top: 1px solid #adbd9c;
-  cursor: pointer;
-}
-.advisor-starters button > span:nth-child(2) {
-  flex: 1;
-}
-.advisor-starters button:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.advisor-starters button:focus-visible {
-  outline-color: #233326;
-}
-.advisor-starters button:disabled {
-  opacity: .5;
-  cursor: default;
-}
-.advisor-prompt-number {
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: #3b503d;
-}
-.advisor-note {
-  padding: 0 4px;
-}
-.advisor-note h3 {
-  font-size: 23px;
-  margin: 8px 0 12px;
-}
-.advisor-note > p:not(.journal-kicker), .advisor-sidebar-caption {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.8;
-  text-wrap: pretty;
-}
-.advisor-note .journal-link {
-  margin-top: 18px;
-}
-.advisor-sidebar-caption {
-  font-size: 10px;
-  padding: 18px 4px 0;
-  border-top: 1px solid var(--color-border);
-}
-
 /* Recorded balances are distinct from today's spendable cash. */
 .history-overview {
   display: grid;
@@ -562,16 +492,6 @@
   border-top: 1px solid var(--color-border);
 }
 @media (max-width: 1100px) {
-  .advisor-layout {
-    grid-template-columns: minmax(0, 1fr) 235px;
-    gap: 18px;
-  }
-  .advisor-compact {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .advisor-starters {
-    padding: 20px;
-  }
   .history-overview {
     grid-template-columns: minmax(215px, .85fr) minmax(0, 1.4fr);
     gap: 18px;
@@ -584,16 +504,13 @@
   }
 }
 @media (max-width: 850px) {
-  .advisor-layout, .history-overview {
+  .history-overview {
     grid-template-columns: minmax(0, 1fr);
   }
-  .advisor-sidebar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-  }
-  .advisor-sidebar-caption {
-    grid-column: 1 / -1;
-  }
+  .advisor-guidance { align-items: flex-start; flex-direction: column; gap: 20px; }
+  .advisor-quick-prompts { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .advisor-quick-prompts button { min-height: 52px; }
+  .advisor-footnotes { flex-direction: column; gap: 8px; }
   .history-change {
     margin-block: 20px;
   }
@@ -620,12 +537,11 @@
     font-size: 23px;
   }
   .advisor-empty {
-    padding: 40px 22px;
-    min-height: 310px;
+    padding: 24px 18px;
   }
   .advisor-thread {
     padding: 20px 18px;
-    min-height: 310px;
+
   }
   .advisor-message {
     max-width: 100%;
@@ -643,12 +559,7 @@
   .advisor-compose-footer p {
     max-width: 23ch;
   }
-  .advisor-sidebar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .advisor-starters h2 br {
-    display: none;
-  }
+  .advisor-guidance { padding: 24px; }
   .history-trend, .history-composition {
     padding: 20px 16px;
   }

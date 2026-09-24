@@ -2,10 +2,9 @@ import { createContext, useCallback, useContext, useRef } from 'react'
 import { useAuth } from './AuthContext'
 import { useAdvisorChat } from '../hooks/useAdvisorChat'
 
-// One shared advisor conversation for the whole app. Mounted above the routes so
-// the thread survives navigation and is the SAME on the Dashboard widget and the
-// Chat page. Pages register a refresh callback so their data (account cards, etc.)
-// refetches after a confirmed write, regardless of which page triggered it.
+// One temporary conversation shared by the advisor entry points. It survives
+// navigation for up to 24 hours. Pages register refresh callbacks so confirmed
+// financial changes refresh their data even when the conversation has expired.
 const AdvisorChatContext = createContext(null)
 
 export function AdvisorChatProvider({ children }) {

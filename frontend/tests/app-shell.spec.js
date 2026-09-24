@@ -6,6 +6,7 @@ async function mockShell(page, { failLogout = false } = {}) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     requests.push({ method: request.method(), path })
+    if (path === '/api/ai/chat') return route.fulfill({ contentType: 'text/event-stream', body: 'event: text\ndata: {"text":"Your recommendations."}\n\nevent: done\ndata: {}\n\n' })
     if (path === '/api/auth/me') return route.fulfill({ json: { id: 1, email: 'a.long.account.address@example.com' } })
     if (path === '/api/auth/logout') return route.fulfill({ status: failLogout ? 500 : 200, json: {} })
     if (path === '/api/auth/login') return route.fulfill({ contentType: 'text/html', body: '<h1>Sign in</h1>' })
@@ -29,7 +30,7 @@ test('desktop rail preserves navigation, page drafts, and collapse preference', 
   await expect(page.locator('.shell-breadcrumb')).toHaveText('Perspective/History')
   await page.reload()
   await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible()
-  await page.getByRole('link', { name: 'Ask advisor' }).click()
+  await page.getByRole('button', { name: 'Ask advisor' }).click()
   await expect(page).toHaveURL('/chat')
   await page.getByRole('button', { name: 'Expand navigation' }).click()
   await expect(page.locator('aside nav a')).toHaveText(['Dashboard', 'Accounts', 'Expenses', 'Income', 'Chat', 'History', 'Settings'])

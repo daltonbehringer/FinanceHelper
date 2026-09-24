@@ -1,10 +1,13 @@
 import { useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import AskAdvisorButton from './AskAdvisorButton'
+import { useAdvisorChatContext } from '../context/AdvisorChatContext'
 import { navigationGroups } from '../lib/navigation'
 
 export default function Header({ onMenuToggle, sidebarOpen, collapsed, onCollapseToggle }) {
   const { user, logout } = useAuth()
+  const { pending, busy } = useAdvisorChatContext()
   const { pathname } = useLocation()
   const accountPopover = useRef(null)
   const [signingOut, setSigningOut] = useState(false)
@@ -45,12 +48,12 @@ export default function Header({ onMenuToggle, sidebarOpen, collapsed, onCollaps
         </div>
       </div>
       <div className="shell-header-actions">
-        {pathname !== '/chat' && <Link to="/chat" className="shell-advisor-link">
+        {pathname !== '/chat' && <AskAdvisorButton className="shell-advisor-link">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-5 3 1.5-6A7.5 7.5 0 1 1 20 11.5Z" />
           </svg>
-          <span>Ask advisor</span>
-        </Link>}
+          <span>{pending ? 'Review proposal' : busy ? 'View response' : 'Ask advisor'}</span>
+        </AskAdvisorButton>}
         <button type="button" className="shell-account-button" popoverTarget="account-popover" aria-label="Account options">
           <span className="shell-avatar" aria-hidden="true">{initial}</span>
           <svg className="shell-account-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>

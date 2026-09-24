@@ -5,6 +5,7 @@ import { useSafeToSpend } from '../hooks/useSafeToSpend'
 import { useSpendingMoney } from '../hooks/useSpendingMoney'
 import { useAdvisorChatContext } from '../context/AdvisorChatContext'
 import { formatMoney, formatDate, isDebt } from '../lib/utils'
+import AskAdvisorButton from '../components/AskAdvisorButton'
 import SpendingBreakdown from '../components/dashboard/SpendingBreakdown'
 import '../styles/dashboard.css'
 
@@ -451,7 +452,7 @@ export default function Dashboard() {
         <BalanceSheet accounts={accounts} loading={accountsLoading} />
       </div>
 
-      <Link to="/chat" className="overview-advisor">
+      <AskAdvisorButton className="overview-advisor">
         <span className="overview-advisor-symbol" aria-hidden="true">
           <svg
             viewBox="0 0 32 32"
@@ -473,13 +474,13 @@ export default function Dashboard() {
           <span>
             {pending
               ? 'Review the details with your advisor before applying it.'
-              : 'Ask a question, record a payment, or plan what comes next.'}
+              : 'Get recommendations based on your current finances.'}
           </span>
         </span>
         <span className="overview-advisor-action">
-          {pending ? 'Review in Chat' : 'Open advisor'} <Arrow />
+          {pending ? 'Review in Chat' : 'Ask advisor'} <Arrow />
         </span>
-      </Link>
+      </AskAdvisorButton>
       <p className="overview-footnote">
         A snapshot of what you’ve recorded. Keep balances and payments current
         for an accurate picture.

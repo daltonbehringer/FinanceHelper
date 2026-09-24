@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAdvisorChatContext } from '../../context/AdvisorChatContext'
 import { formatMoney } from '../../lib/utils'
-import { Link } from 'react-router-dom'
+import { ADVISOR_PROMPTS, RECOMMENDATIONS_PROMPT } from '../../lib/advisor'
 import Button from '../ui/Button'
 import Markdown from '../ui/Markdown'
 
@@ -75,154 +75,124 @@ function PreviewCard({ preview, busy, onConfirm, onCancel }) {
   )
 }
 
-export default function AdvisorChat({ variant = 'full' }) {
-  const { thread, pending, status, error, busy, send, confirm, cancel, clear } =
-    useAdvisorChatContext()
-
+export default function AdvisorChat() {
+  const { thread, pending, status, error, notice, busy, send, confirm, cancel, clear } = useAdvisorChatContext()
   const [text, setText] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
   const textareaRef = useRef(null)
-  const threadEndRef = useRef(null)
-
-  // 'compact' (Dashboard widget): a fresh quick-action box — show only the latest
-  // assistant response to what's asked HERE this visit, no echoed prompts, no
-  // history (that lives on the Chat page). 'full' (Chat page): the whole thread.
-  const compact = variant === 'compact'
-  const [sessionStart] = useState(() => thread.length)
-  const displayed = compact
-    ? thread.slice(sessionStart).filter((m) => m.role === 'assistant').slice(-1)
-    : thread
+  const answerRef = useRef(null)
+  const blocked = busy || Boolean(pending)
+  const displayed = showHistory ? thread : thread.filter(message => message.role === 'assistant').slice(-1)
+  const hasEarlierMessages = thread.length > 2
 
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: 'instant', block: 'nearest' })
-  }, [thread, pending])
-
-  function autoResize() {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = el.scrollHeight + 'px'
-  }
+    if (status === 'streaming') {
+      answerRef.current?.scrollIntoView({ behavior: 'instant', block: 'nearest' })
+      answerRef.current?.focus({ preventScroll: true })
+    }
+  }, [status])
 
   function submit() {
     const value = text.trim()
-    if (!value || busy) return
+    if (!value || blocked) return
     setText('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     send(value)
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      submit()
-    }
-  }
-
-  function handleClear() {
-    if (window.confirm('Clear the entire chat history?')) clear()
-  }
-
-  const starters = [
-    { label: 'Plan my spending', prompt: 'How much can I safely spend before my next paycheck?' },
-    { label: 'Look at my debt', prompt: 'Which debt should I focus on paying down next, and why?' },
-    { label: 'Review upcoming bills', prompt: 'What payments do I need to plan for before my next paycheck?' },
-  ]
-
-  function draftPrompt(prompt) {
-    setText(prompt)
-    textareaRef.current?.focus()
+  function ask(prompt) {
+    if (blocked) return
+    setText('')
+    setShowHistory(false)
+    send(prompt, { fresh: true })
   }
 
   return (
-    <div className={compact ? 'advisor-layout advisor-compact' : 'advisor-layout'}>
+    <div className="advisor-workspace">
+      <section className="advisor-guidance" aria-label="Get recommendations">
+        <div>
+          <p className="journal-kicker">YOUR MONEY. YOUR NEXT MOVE.</p>
+          <h2>A little clarity goes a long way.</h2>
+          <p>Get a fresh look at your spending room, upcoming bills, and priorities for debt or savings.</p>
+        </div>
+        <Button className="advisor-ask" onClick={() => ask(RECOMMENDATIONS_PROMPT)} disabled={blocked}>
+          Ask advisor <span aria-hidden="true">↗</span>
+        </Button>
+      </section>
+
+      <div className="advisor-quick-prompts" role="group" aria-label="Quick questions">
+        {ADVISOR_PROMPTS.map((starter, index) => <button key={starter.label} type="button" onClick={() => ask(starter.prompt)} disabled={blocked}>
+          <span className="advisor-prompt-number" aria-hidden="true">0{index + 1}</span>
+          <span>{starter.label}</span><span aria-hidden="true">↗</span>
+        </button>)}
+      </div>
+
       <section className="journal-panel advisor-conversation" aria-label="Financial advisor">
         <header className="advisor-header">
           <div className="advisor-heading">
             <span className="advisor-mark" aria-hidden="true">✳</span>
             <div>
               <p className="journal-kicker">FINANCIAL ADVISOR</p>
-              <h2>Your conversation</h2>
+              <h2>{showHistory ? 'This conversation' : 'Your answer'}</h2>
             </div>
           </div>
-          {!compact && thread.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={handleClear} disabled={busy}>Clear</Button>
-          )}
+          {thread.length > 0 && <Button variant="ghost" size="sm" onClick={() => { if (window.confirm('Clear this conversation?')) clear() }} disabled={blocked}>Clear</Button>}
         </header>
 
-        {displayed.length === 0 && !pending ? (
-          <div className="advisor-empty">
-            <p className="journal-kicker">LET’S THINK IT THROUGH</p>
-            <h3>More clarity.<br />A confident next step.</h3>
-            <p>Start with what is on your mind. Your advisor can help connect your balances, bills, and goals.</p>
-            <button type="button" className="journal-link" onClick={() => textareaRef.current?.focus()}>Start a conversation <span aria-hidden="true">↗</span></button>
-          </div>
-        ) : (
-          <div className="advisor-thread" role="log" aria-label="Conversation" aria-busy={busy} tabIndex={0}>
-            {displayed.map((m, i) => (
-              <div key={i} className={`advisor-message ${m.role === 'user' ? 'advisor-message-user' : m.system ? 'advisor-message-system' : 'advisor-message-assistant'}`}>
-                <p className="advisor-speaker">{m.role === 'user' ? 'YOU' : m.system ? 'ACTIVITY UPDATE' : 'ADVISOR'}</p>
-                <div className="advisor-message-content">
-                  {m.role === 'user' || m.system
-                    ? <p>{m.content}</p>
-                    : <Markdown>{m.content || (m.streaming ? 'Thinking…' : '')}</Markdown>}
-                </div>
+        {notice && <p className="advisor-retention-notice" role="status">{notice}</p>}
+        {thread.length > 0 ? <>
+          {hasEarlierMessages && <button type="button" className="advisor-history-toggle" aria-expanded={showHistory} aria-controls="advisor-answer" onClick={() => setShowHistory(value => !value)}>
+            {showHistory ? 'Show latest answer only' : 'Show this conversation'}
+          </button>}
+          <div id="advisor-answer" className={`advisor-thread${showHistory ? ' advisor-thread-expanded' : ''}`} role="log" aria-label="Conversation" aria-busy={busy} tabIndex={0} ref={answerRef}>
+            {displayed.map((message, index) => <div key={index} className={`advisor-message ${message.role === 'user' ? 'advisor-message-user' : message.system ? 'advisor-message-system' : 'advisor-message-assistant'}`}>
+              <p className="advisor-speaker">{message.role === 'user' ? 'YOU' : message.system ? 'ACTIVITY UPDATE' : 'ADVISOR'}</p>
+              <div className="advisor-message-content">
+                {message.role === 'user' || message.system
+                  ? <p>{message.content}</p>
+                  : <Markdown>{message.content || (message.streaming ? 'Thinking…' : '')}</Markdown>}
               </div>
-            ))}
-            {pending && (
-              <PreviewCard preview={pending.preview} busy={status === 'confirming'} onConfirm={confirm} onCancel={cancel} />
-            )}
-            {!compact && <div ref={threadEndRef} />}
+            </div>)}
+            {pending && <PreviewCard preview={pending.preview} busy={status === 'confirming'} onConfirm={confirm} onCancel={cancel} />}
           </div>
-        )}
+        </> : <div className="advisor-empty">
+          <h3>What would help today?</h3>
+          <p>Ask for recommendations, choose a quick question, or write your own below.</p>
+        </div>}
 
         <div className="advisor-compose">
           {error && <div id="advisor-error" className="advisor-error" role="alert">{error}</div>}
           <label className="sr-only" htmlFor="advisor-message">Message your advisor</label>
-          <textarea
-            id="advisor-message"
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => { setText(e.target.value); autoResize() }}
-            onKeyDown={handleKeyDown}
+          <textarea id="advisor-message" ref={textareaRef} value={text}
+            onChange={event => {
+              setText(event.target.value)
+              event.target.style.height = 'auto'
+              event.target.style.height = event.target.scrollHeight + 'px'
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                submit()
+              }
+            }}
             aria-describedby={error ? 'advisor-error advisor-keyboard-hint' : 'advisor-keyboard-hint'}
-            placeholder="Ask a question or describe an update…"
-            rows={2}
-            disabled={busy}
-          />
+            placeholder={thread.length ? 'Ask a follow-up or describe an update…' : 'Or ask your own question…'}
+            rows={2} disabled={blocked} />
           <div className="advisor-compose-footer">
             <div>
-              <p role="status" className="advisor-status">{status === 'streaming' ? 'Your advisor is responding…' : status === 'confirming' ? 'Applying your change…' : pending ? 'Review the proposed change above.' : 'Ready when you are.'}</p>
+              <p role="status" className="advisor-status">{status === 'streaming' ? 'Your advisor is responding…' : status === 'confirming' ? 'Processing your choice…' : pending ? 'Confirm or cancel the proposal to continue.' : thread.length ? 'Have a follow-up? Keep going.' : 'Ready when you are.'}</p>
               <p id="advisor-keyboard-hint">Enter to send · Shift + Enter for a new line</p>
             </div>
-            <Button className="advisor-send" onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || busy}>
+            <Button className="advisor-send" onClick={submit} loading={status === 'streaming'} disabled={!text.trim() || blocked}>
               Send <span aria-hidden="true">↗</span>
             </Button>
           </div>
         </div>
       </section>
-
-      {!compact && (
-        <aside className="advisor-sidebar" aria-label="Conversation ideas">
-          <section className="advisor-starters">
-            <p className="journal-kicker">A PLACE TO BEGIN</p>
-            <h2>What’s on <br />your mind?</h2>
-            <p>Choose a starting point, then make it your own.</p>
-            {starters.map((starter, index) => (
-              <button key={starter.label} type="button" onClick={() => draftPrompt(starter.prompt)} disabled={busy}>
-                <span className="advisor-prompt-number" aria-hidden="true">0{index + 1}</span>
-                <span>{starter.label}</span><span aria-hidden="true">↗</span>
-              </button>
-            ))}
-          </section>
-          <section className="advisor-note">
-            <p className="journal-kicker">FROM WORDS TO ACTION</p>
-            <h3>You have the final say.</h3>
-            <p>Payments and balance updates appear as a proposal. Review the details, then confirm or cancel.</p>
-            <Link className="journal-link" to="/history">Review your activity <span aria-hidden="true">↗</span></Link>
-          </section>
-          <p className="advisor-sidebar-caption">Your conversation stays together as you move between pages.</p>
-        </aside>
-      )}
+      <div className="advisor-footnotes">
+        <p>Conversation memory expires after 24 hours. Ask advisor and quick questions start fresh; follow-ups keep the current context.</p>
+        <p>Payments and balance updates still need your confirmation. Recorded financial activity stays in History.</p>
+      </div>
     </div>
   )
 }

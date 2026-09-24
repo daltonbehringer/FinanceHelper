@@ -460,6 +460,9 @@
   color: var(--ov-sage);
 }
 .overview-advisor {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 18px;

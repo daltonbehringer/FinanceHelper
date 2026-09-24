@@ -97,7 +97,7 @@
 .shell-breadcrumb-group { color: #a4ada9; }
 .shell-breadcrumb-divider { color: #65726c; }
 .shell-header-actions { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
-.shell-advisor-link { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; color: #d4e2bf; font-size: 12px; border: 1px solid #394537; padding: 8px 13px; border-radius: 8px; }
+.shell-advisor-link { cursor: pointer; display: inline-flex; align-items: center; gap: 9px; min-height: 40px; color: #d4e2bf; font-size: 12px; border: 1px solid #394537; padding: 8px 13px; border-radius: 8px; }
 .shell-advisor-link:hover { background: #25302d; }
 .shell-advisor-link svg { width: 17px; height: 17px; }
 .shell-account-button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px; border-radius: 8px; cursor: pointer; }

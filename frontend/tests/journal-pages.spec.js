@@ -55,9 +55,7 @@ test('chat drafts without requests, streams, persists, and confirms clearing', a
   const requests = await mockJournal(page, { holdResponse: held })
   await page.goto('/chat')
   const input = page.getByRole('textbox', { name: 'Message your advisor' })
-  await page.getByRole('button', { name: 'Plan my spending' }).click()
-  await expect(input).toBeFocused()
-  await expect(input).toHaveValue('How much can I safely spend before my next paycheck?')
+  await input.fill('How much can I safely spend before my next paycheck?')
   expect(requests.filter((r) => r.method === 'POST')).toHaveLength(0)
   await input.press('End')
   await input.press('Shift+Enter')
@@ -83,7 +81,7 @@ test('chat drafts without requests, streams, persists, and confirms clearing', a
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page.getByRole('log')).toHaveCount(0)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'More clarity. A confident next step.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What would help today?' })).toBeVisible()
 })
 
 for (const action of ['Confirm', 'Cancel']) {

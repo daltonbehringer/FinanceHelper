@@ -87,6 +87,7 @@ async function mockOverview(page, summary = plan, accountData = accounts) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
     requested.push(path)
+    if (path === '/api/ai/chat') return route.fulfill({ contentType: 'text/event-stream', body: 'event: text\ndata: {"text":"Your recommendations."}\n\nevent: done\ndata: {}\n\n' })
     if (path === '/api/dashboard/safe-to-spend' && summary === null)
       return route.fulfill({ status: 503, json: {} })
     const data =
@@ -138,8 +139,10 @@ test('overview uses current balances without history or AI requests', async ({
   await expect(
     page.getByRole('link', { name: 'Edit living costs and cushion' })
   ).toBeVisible()
-  await page.getByRole('link', { name: /Open advisor/ }).click()
+  await page.locator('.overview-advisor').click()
   await expect(page).toHaveURL(/\/chat$/)
+  await expect(page.getByRole('log')).toContainText('Your recommendations.')
+  expect(requested.filter(path => path === '/api/ai/chat')).toHaveLength(1)
 })
 
 test('shortfall and overdue bills receive explicit labels', async ({

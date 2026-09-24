@@ -1,63 +1,85 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch, apiStream } from '../lib/api'
+import { ADVISOR_TTL_MS, advisorStorageKey, loadAdvisorHistory } from '../lib/advisor'
 
-// Owns the advisor conversation: the Anthropic-format history sent to the server
-// (client-held), the display thread, the SSE stream, and the pending confirmation
-// lifecycle. Mounted ONCE in AdvisorChatContext so the thread is shared across the
-// Dashboard widget and the Chat page and survives navigation.
-//
-// History is persisted to localStorage (keyed by user) at settled points only —
-// when status is 'idle', the history is balanced (no dangling tool_use), so a
-// reload never restores a half-finished proposal.
-//
-// State machine: idle → streaming → (idle | awaiting_confirmation)
-//                awaiting_confirmation → confirming → idle
-
-const STORAGE_PREFIX = 'advisorChat:'
-
-function storageKey(userId) {
-  return STORAGE_PREFIX + (userId ?? 'default')
-}
-
-function loadHistory(userId) {
-  try {
-    const raw = localStorage.getItem(storageKey(userId))
-    if (!raw) return null
-    const data = JSON.parse(raw)
-    if (!Array.isArray(data?.thread) || !Array.isArray(data?.apiHistory)) return null
-    return data
-  } catch {
-    return null
-  }
-}
-
+// Shared across routes. Only settled conversations are persisted, and every
+// conversation has a fixed 24-hour deadline that follow-ups never extend.
 export function useAdvisorChat({ onUpdate, onExpenseUpdate, userId } = {}) {
-  // Load persisted history once (user is resolved before this mounts).
-  const [initial] = useState(() => loadHistory(userId) || { thread: [], apiHistory: [] })
-  const apiHistory = useRef(initial.apiHistory)
-  const [thread, setThread] = useState(initial.thread)
+  const [conversation, setConversation] = useState(() => loadAdvisorHistory(userId) || { thread: [], apiHistory: [], expiresAt: null })
+  const { thread, expiresAt } = conversation
+  const apiHistory = useRef(conversation.apiHistory || [])
+  const deadline = useRef(expiresAt)
+  const generation = useRef(0)
+  const streamController = useRef(null)
+  const statusRef = useRef('idle')
+  const setThread = useCallback(next => setConversation(current => ({
+    thread: typeof next === 'function' ? next(current.thread) : next, expiresAt: current.expiresAt,
+  })), [])
   const [pending, setPending] = useState(null)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
-
+  const [notice, setNotice] = useState('')
   const busy = status === 'streaming' || status === 'confirming'
 
-  // Persist only when settled: a 'pending' proposal and in-flight streams are not
-  // saved, so the stored history is always a valid (balanced) message list.
-  useEffect(() => {
-    if (status !== 'idle') return
-    try {
-      localStorage.setItem(
-        storageKey(userId),
-        JSON.stringify({ thread, apiHistory: apiHistory.current }),
-      )
-    } catch {
-      /* storage full or unavailable — non-fatal */
-    }
-  }, [thread, status, userId])
+  function changeStatus(next) {
+    statusRef.current = next
+    setStatus(next)
+  }
 
-  function _setLastAssistant(content, streaming) {
-    setThread((t) => {
+  const clear = useCallback((expired = false) => {
+    generation.current += 1
+    streamController.current?.abort()
+    streamController.current = null
+    apiHistory.current = []
+    deadline.current = null
+    statusRef.current = 'idle'
+    setConversation({ thread: [], expiresAt: null })
+    setPending(null)
+    setStatus('idle')
+    setError('')
+    setNotice(expired ? 'Your conversation expired after 24 hours. Ask again for fresh guidance.' : '')
+    try { localStorage.removeItem(advisorStorageKey(userId)) } catch { /* storage unavailable */ }
+  }, [userId])
+
+  const expireIfNeeded = useCallback(() => {
+    if (deadline.current && deadline.current <= Date.now()) {
+      clear(true)
+      return true
+    }
+    return false
+  }, [clear])
+
+  useEffect(() => {
+    const timeout = expiresAt ? setTimeout(expireIfNeeded, Math.max(0, expiresAt - Date.now())) : null
+    // Timers can be suspended in background tabs. Recheck when the app resumes.
+    window.addEventListener('focus', expireIfNeeded)
+    document.addEventListener('visibilitychange', expireIfNeeded)
+    const onStorage = event => {
+      if (event.key === advisorStorageKey(userId) && event.newValue === null) clear()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => {
+      clearTimeout(timeout)
+      window.removeEventListener('focus', expireIfNeeded)
+      document.removeEventListener('visibilitychange', expireIfNeeded)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [expiresAt, expireIfNeeded, clear, userId])
+
+  useEffect(() => () => {
+    generation.current += 1
+    streamController.current?.abort()
+  }, [])
+
+  useEffect(() => {
+    if (status !== 'idle' || !expiresAt || expiresAt <= Date.now()) return
+    try {
+      localStorage.setItem(advisorStorageKey(userId), JSON.stringify({ thread, apiHistory: apiHistory.current, expiresAt }))
+    } catch { /* storage full or unavailable — non-fatal */ }
+  }, [thread, status, expiresAt, userId])
+
+  function setLastAssistant(content, streaming) {
+    setThread(t => {
       const next = [...t]
       for (let i = next.length - 1; i >= 0; i--) {
         if (next[i].role === 'assistant' && !next[i].system) {
@@ -69,108 +91,110 @@ export function useAdvisorChat({ onUpdate, onExpenseUpdate, userId } = {}) {
     })
   }
 
-  function _dropStreamingPlaceholder() {
-    setThread((t) => t.filter((m) => !(m.role === 'assistant' && m.streaming && !m.content)))
-  }
-
-  async function send(text) {
+  async function send(text, { fresh = false } = {}) {
     const clean = (text || '').trim()
-    if (!clean || busy) return
+    expireIfNeeded()
+    // Do not replace an in-flight request or an unreviewed financial proposal.
+    if (!clean || statusRef.current !== 'idle') return
+    if (fresh) clear()
+    if (!deadline.current) {
+      deadline.current = Date.now() + ADVISOR_TTL_MS
+      const nextDeadline = deadline.current
+      setConversation(current => ({ thread: current.thread, expiresAt: nextDeadline }))
+    }
+    const requestGeneration = generation.current
+    const active = () => !expireIfNeeded() && generation.current === requestGeneration
+    const controller = new AbortController()
+    streamController.current = controller
     setError('')
+    setNotice('')
     apiHistory.current = [...apiHistory.current, { role: 'user', content: clean }]
-    setThread((t) => [
-      ...t,
-      { role: 'user', content: clean },
-      { role: 'assistant', content: '', streaming: true },
-    ])
-    setStatus('streaming')
-    setPending(null)
-
+    setThread(t => [...t, { role: 'user', content: clean }, { role: 'assistant', content: '', streaming: true }])
+    changeStatus('streaming')
     let acc = ''
     let proposed = false
+    let finished = false
+    let failed = false
+    function fail(detail) {
+      if (!active() || failed) return
+      failed = true
+      setThread(t => t.filter(m => !(m.role === 'assistant' && m.streaming && !m.content)).map(m => ({ ...m, streaming: false })))
+      setError(detail)
+      changeStatus(proposed ? 'awaiting_confirmation' : 'idle')
+    }
 
     await apiStream('/api/ai/chat', { messages: apiHistory.current }, {
-      onText: (delta) => {
+      signal: controller.signal,
+      onText: delta => {
+        if (!active() || failed) return
         acc += delta
-        _setLastAssistant(acc, true)
+        setLastAssistant(acc, true)
       },
-      onPending: (data) => {
+      onPending: data => {
+        if (!active() || failed) return
         proposed = true
         const blocks = []
         if (data.text) blocks.push({ type: 'text', text: data.text })
-        blocks.push({
-          type: 'tool_use',
-          id: data.tool_use.id,
-          name: data.tool_use.name,
-          input: data.tool_use.input,
-        })
+        blocks.push({ type: 'tool_use', id: data.tool_use.id, name: data.tool_use.name, input: data.tool_use.input })
         apiHistory.current = [...apiHistory.current, { role: 'assistant', content: blocks }]
-        _setLastAssistant(data.text || acc, false)
-        setPending({
-          id: data.pending_action_id,
-          preview: data.preview,
-          toolName: data.tool_use.name,
-        })
-        setStatus('awaiting_confirmation')
+        setLastAssistant(data.text || acc, false)
+        setPending({ id: data.pending_action_id, preview: data.preview, toolName: data.tool_use.name, toolUseId: data.tool_use.id })
+        changeStatus('awaiting_confirmation')
       },
-      onError: (detail) => {
-        _dropStreamingPlaceholder()
-        setError(detail)
-        setStatus('idle')
-      },
+      onError: fail,
       onDone: () => {
+        if (!active() || failed) return
+        finished = true
         if (!proposed) {
           apiHistory.current = [...apiHistory.current, { role: 'assistant', content: acc }]
-          _setLastAssistant(acc, false)
-          setStatus('idle')
+          setLastAssistant(acc, false)
+          changeStatus('idle')
         }
       },
     })
+    if (!finished && !proposed && !failed) fail('The response ended early. Please ask again.')
+    if (streamController.current === controller) streamController.current = null
   }
 
-  async function confirm() {
-    if (!pending || status === 'confirming') return
-    setStatus('confirming')
+  async function resolveProposal(action) {
+    if (expireIfNeeded() || !pending || statusRef.current !== 'awaiting_confirmation') return
+    const proposal = pending
+    const requestGeneration = generation.current
+    changeStatus('confirming')
     setError('')
-    const resp = await apiFetch(`/api/ai/actions/${pending.id}/confirm`, { method: 'POST' })
-    if (!resp || !resp.ok) {
-      let detail = 'Could not apply the change. Please try again.'
-      try { detail = (await resp.json()).detail || detail } catch { /* ignore */ }
-      setError(detail)
-      setPending(null)
-      setStatus('idle')
-      return
-    }
-    const body = await resp.json()
-    apiHistory.current = [...apiHistory.current, { role: 'user', content: [body.tool_result] }]
-    setThread((t) => [...t, { role: 'assistant', content: body.message, system: true }])
-    const toolName = pending.toolName
-    setPending(null)
-    setStatus('idle')
-    onUpdate?.()
-    if (toolName === 'pay_expense') onExpenseUpdate?.()
-  }
-
-  async function cancel() {
-    if (!pending) return
-    const resp = await apiFetch(`/api/ai/actions/${pending.id}/cancel`, { method: 'POST' })
-    if (resp && resp.ok) {
-      const body = await resp.json()
+    try {
+      const resp = await apiFetch(`/api/ai/actions/${proposal.id}/${action}`, { method: 'POST' })
+      const body = await resp?.json().catch(() => ({}))
+      // A confirmed write remains real even if the conversation expired while
+      // the request was in flight. Refresh financial data, but don't restore chat.
+      if (resp?.ok && action === 'confirm') {
+        onUpdate?.()
+        if (proposal.toolName === 'pay_expense') onExpenseUpdate?.()
+      }
+      if (expireIfNeeded() || generation.current !== requestGeneration) return
+      if (!resp?.ok) {
+        if (resp?.status === 404 || resp?.status === 409) {
+          apiHistory.current = [...apiHistory.current, { role: 'user', content: [{
+            type: 'tool_result', tool_use_id: proposal.toolUseId,
+            content: body?.detail || 'This proposal is no longer available. Ask for a new proposal.', is_error: true,
+          }] }]
+          setPending(null)
+          changeStatus('idle')
+        } else changeStatus('awaiting_confirmation')
+        setError(body?.detail || 'Could not complete the request. Please try again.')
+        return
+      }
       apiHistory.current = [...apiHistory.current, { role: 'user', content: [body.tool_result] }]
-      setThread((t) => [...t, { role: 'assistant', content: body.message, system: true }])
+      setThread(t => [...t, { role: 'assistant', content: body.message, system: true }])
+      setPending(null)
+      changeStatus('idle')
+    } catch {
+      if (expireIfNeeded() || generation.current !== requestGeneration) return
+      setError('Could not reach the advisor. Please try again.')
+      changeStatus('awaiting_confirmation')
     }
-    setPending(null)
-    setStatus('idle')
   }
 
-  function clear() {
-    apiHistory.current = []
-    setThread([])
-    setPending(null)
-    setStatus('idle')
-    setError('')
-    try { localStorage.removeItem(storageKey(userId)) } catch { /* ignore */ }
-  }
-
-  return { thread, pending, status, error, busy, send, confirm, cancel, clear }
+  return { thread, expiresAt, pending, status, error, notice, busy, send,
+    confirm: () => resolveProposal('confirm'), cancel: () => resolveProposal('cancel'), clear }
 }
