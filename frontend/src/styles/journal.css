@@ -185,15 +185,17 @@
 }
 .advisor-thread {
   min-height: 120px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   scrollbar-color: #4a5948 #171f21;
   padding: 26px;
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
-.advisor-thread-expanded { max-height: min(60dvh, 640px); }
+/* Only expanded history scrolls internally; allow page scrolling at its edges. */
+.advisor-thread-expanded {
+  max-height: min(60dvh, 640px);
+  overflow-y: auto;
+}
 .advisor-message {
   min-width: 0;
   max-width: 94%;
